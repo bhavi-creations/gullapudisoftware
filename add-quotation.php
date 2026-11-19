@@ -25,6 +25,9 @@ $L = $isOrder ? [
     'details' => 'Order Details',
     'summary' => 'Order Summary',
     'save' => 'Save Order & Invoice',
+    'saveMaster' => 'Save Order & Invoice',
+    'saveGenerate' => 'Save & Print Invoice',
+    'waTitle' => 'Order',
 ] : [
     'title' => 'Quotation (POS)',
     'subtitle' => 'Create new quotation for your customer',
@@ -36,6 +39,9 @@ $L = $isOrder ? [
     'details' => 'Quotation Details',
     'summary' => 'Quotation Summary',
     'save' => 'Save Quotation',
+    'saveMaster' => 'Save as Master Quotation',
+    'saveGenerate' => 'Save & Generate Quotation',
+    'waTitle' => 'Quotation',
 ];
 
 $customers = db_all("SELECT id, name, mobile FROM customers WHERE status = 'active' ORDER BY name");
@@ -237,7 +243,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             json_response([
                 'success' => true,
                 'quotation_id' => $orderNumber,
-                'redirect' => 'orders.php?saved=' . urlencode($orderNumber)
+                'redirect' => ($payload['mode'] ?? '') === 'generate'
+                    ? 'invoice-print.php?id=' . $invoiceId . '&new=1'
+                    : 'orders.php?saved=' . urlencode($orderNumber)
             ]);
         }
 
@@ -272,7 +280,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_response([
             'success' => true,
             'quotation_id' => $quotationNumber,
-            'redirect' => 'quotation.php?saved=' . urlencode($quotationNumber)
+            'redirect' => ($payload['mode'] ?? '') === 'generate'
+                ? 'quotation-print.php?id=' . $quotationId
+                : 'quotation.php?saved=' . urlencode($quotationNumber)
         ]);
 
     } catch (Throwable $e) {
@@ -287,459 +297,7 @@ $pageTitle = $L['title'];
 include 'header.php';
 ?>
 
-<style>
-/* ADD QUOTATION MAIN SECTION */
 
-.add-quotation-section {
-    background: #f6f8fd;
-    min-height: 100vh;
-    padding: 22px;
-    font-family: Arial, sans-serif;
-    color: #142238;
-}
-
-/* HEADER */
-
-.add-quotation-section .aq-title {
-    font-size: 26px;
-    font-weight: 750;
-    margin: 0 0 8px;
-}
-
-.add-quotation-section .aq-subtitle {
-    font-size: 15px;
-    font-weight: 600;
-    color: #64748b;
-    margin: 0;
-}
-
-.add-quotation-section .aq-header-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 13px;
-    background: white;
-    border: 1px solid #e1e7f0;
-    border-radius: 13px;
-    padding: 14px 18px;
-    color: #293b55;
-    font-size: 15px;
-    font-weight: 750;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.add-quotation-section .aq-header-btn:hover {
-    background: #edf4ff;
-    color: #1479ff;
-}
-
-/* MAIN PANELS */
-
-.add-quotation-section .aq-card {
-    background: #fff;
-    border: 1px solid #e0e6ef;
-    border-radius: 13px;
-    overflow: hidden;
-}
-
-/* QUOTATION INFORMATION */
-
-.add-quotation-section .aq-info-card {
-    margin-top: 27px;
-    margin-bottom: 18px;
-    padding: 16px 0;
-}
-
-.add-quotation-section .aq-info-item {
-    padding: 5px 20px;
-    border-right: 1px solid #e8edf4;
-    min-height: 65px;
-}
-
-.add-quotation-section .aq-info-item:last-child {
-    border-right: none;
-}
-
-.add-quotation-section .aq-info-label {
-    color: #61718a;
-    font-size: 14px;
-    font-weight: 650;
-    margin-bottom: 9px;
-}
-
-.add-quotation-section .aq-info-value {
-    font-size: 15px;
-    font-weight: 750;
-    color: #18283d;
-}
-
-.add-quotation-section .aq-info-value i {
-    color: #7187a5;
-    margin-right: 10px;
-    font-size: 17px;
-}
-
-.add-quotation-section .aq-date-input {
-    border: none;
-    background: transparent;
-    font-weight: 750;
-    color: #18283d;
-    font-size: 15px;
-    width: 155px;
-    outline: none;
-}
-
-.add-quotation-section .aq-info-select {
-    border: none;
-    background: transparent;
-    font-size: 15px;
-    font-weight: 700;
-    color: #18283d;
-    outline: none;
-    max-width: 100%;
-    cursor: pointer;
-}
-
-.add-quotation-section .aq-reference {
-    width: 100%;
-    height: 47px;
-    border: 1px solid #e1e7f0;
-    border-radius: 11px;
-    background: #f9fafc;
-    padding: 12px 14px;
-    font-size: 15px;
-    outline: none;
-}
-
-.add-quotation-section .aq-reference:focus {
-    border-color: #1479ff;
-}
-
-/* PRODUCT TOOLBAR */
-
-.add-quotation-section .aq-product-toolbar {
-    padding: 14px;
-    border-bottom: 1px solid #e6eaf1;
-}
-
-.add-quotation-section .aq-customer-select {
-    height: 56px;
-    width: 100%;
-    border: 1px solid #cde0ff;
-    border-radius: 12px;
-    background: #f4f8ff;
-    color: #1479ff;
-    padding: 10px 12px;
-    font-weight: 750;
-    cursor: pointer;
-}
-
-.add-quotation-section .aq-customer-label {
-    display: block;
-    font-size: 12px;
-    color: #64748b;
-    margin-bottom: 3px;
-}
-
-.add-quotation-section .aq-customer-select select {
-    display: block;
-    width: 100%;
-    border: none;
-    outline: none;
-    color: #1479ff;
-    background: transparent;
-    font-weight: 750;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.add-quotation-section .aq-product-search {
-    height: 54px;
-    display: flex;
-    align-items: center;
-    gap: 13px;
-    border: 1px solid #e1e7f0;
-    border-radius: 11px;
-    padding: 0 16px;
-    color: #71839c;
-    background: white;
-}
-
-.add-quotation-section .aq-product-search input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 15px;
-}
-
-.add-quotation-section .aq-region-select {
-    height: 54px;
-    width: 100%;
-    border: 1px solid #e1e7f0;
-    background: white;
-    border-radius: 12px;
-    padding: 0 15px;
-    font-size: 15px;
-    font-weight: 650;
-    color: #293b55;
-}
-
-.add-quotation-section .aq-add-product-btn {
-    background: #1479ff;
-    border: 1px solid #1479ff;
-    color: white;
-    border-radius: 12px;
-    padding: 16px 15px;
-    font-size: 15px;
-    font-weight: 750;
-    width: 100%;
-    min-height: 54px;
-}
-
-.add-quotation-section .aq-add-product-btn:hover {
-    background: #0868e6;
-}
-
-.add-quotation-section .aq-details-btn {
-    background: white;
-    border: 1px solid #e1e7f0;
-    border-radius: 12px;
-    padding: 15px 14px;
-    min-height: 54px;
-    width: 100%;
-    color: #293b55;
-    font-size: 15px;
-    font-weight: 750;
-}
-
-.add-quotation-section .aq-details-btn:hover {
-    background: #f5f8fc;
-}
-
-/* PRODUCT TABLE */
-
-.add-quotation-section .aq-table {
-    width: 100%;
-    min-width: 1250px;
-    margin-bottom: 0;
-}
-
-.add-quotation-section .aq-table thead th {
-    padding: 22px 15px;
-    font-size: 14px;
-    font-weight: 750;
-    color: #293b55;
-    border-bottom: 1px solid #e8edf4;
-    white-space: nowrap;
-}
-
-.add-quotation-section .aq-table tbody td {
-    padding: 14px 12px;
-    vertical-align: middle;
-    color: #293b55;
-    font-size: 14px;
-}
-
-.add-quotation-section .aq-table tbody tr:hover {
-    background: #fafcff;
-}
-
-.add-quotation-section .aq-table-input {
-    width: 77px;
-    max-width: 100%;
-    height: 36px;
-    border: 1px solid #dfe6ef;
-    border-radius: 7px;
-    padding: 7px;
-    background: #fff;
-    color: #293b55;
-}
-
-.add-quotation-section .aq-table-input:focus {
-    outline: none;
-    border-color: #1479ff;
-}
-
-.add-quotation-section .aq-remove-btn {
-    color: #f0444c;
-    font-size: 16px;
-    border: none;
-    background: transparent;
-}
-
-.add-quotation-section .aq-empty-row {
-    padding: 22px !important;
-    text-align: center;
-    color: #94a3b8 !important;
-}
-
-/* NOTES */
-
-.add-quotation-section .aq-notes-card {
-    padding: 16px;
-    margin-top: 35px;
-}
-
-.add-quotation-section .aq-section-title {
-    font-size: 16px;
-    font-weight: 750;
-    margin-bottom: 15px;
-}
-
-.add-quotation-section .aq-notes {
-    width: 100%;
-    min-height: 180px;
-    resize: vertical;
-    border: 1px solid #e2e8f0;
-    background: #fafbfe;
-    border-radius: 12px;
-    padding: 14px;
-    font-size: 15px;
-    line-height: 1.5;
-    color: #34445d;
-    outline: none;
-}
-
-.add-quotation-section .aq-notes:focus {
-    border-color: #1479ff;
-}
-
-/* TOTAL AND SAVE */
-
-.add-quotation-section .aq-summary {
-    padding: 18px;
-    margin-top: 20px;
-}
-
-.add-quotation-section .aq-summary-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 15px;
-    margin-bottom: 12px;
-    font-size: 14px;
-    color: #64748b;
-}
-
-.add-quotation-section .aq-summary-total {
-    font-size: 20px;
-    font-weight: 750;
-    color: #152239;
-    padding-top: 16px;
-    border-top: 1px solid #e1e7f0;
-}
-
-.add-quotation-section .aq-save-btn {
-    background: #1479ff;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 15px 20px;
-    font-size: 15px;
-    font-weight: 750;
-}
-
-.add-quotation-section .aq-save-btn:disabled {
-    opacity: .6;
-}
-
-/* MODAL */
-
-.aq-modal .modal-content {
-    border: none;
-    border-radius: 15px;
-}
-
-.aq-modal .modal-header,
-.aq-modal .modal-footer {
-    padding: 16px 20px;
-}
-
-.aq-modal .modal-body {
-    padding: 20px;
-}
-
-
-/* Compact + aligned (shared look) */
-.add-quotation-section .aq-header-btn { padding: 9px 14px; gap: 8px; font-size: 14px; border-radius: 10px; }
-.add-quotation-section .aq-info-card { margin-top: 16px; margin-bottom: 16px; padding: 12px 0; }
-.add-quotation-section .aq-info-item { min-height: 0; height: 100%; padding: 4px 18px; display: flex; flex-direction: column; justify-content: flex-start; }
-.add-quotation-section .aq-info-label { font-size: 12.5px; margin-bottom: 6px; }
-.add-quotation-section .aq-date-input, .add-quotation-section .aq-info-select, .add-quotation-section .aq-info-value { font-size: 14px; }
-.add-quotation-section .aq-reference { height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 8px; }
-.add-quotation-section .aq-product-toolbar { padding: 12px 14px; }
-.add-quotation-section .aq-customer-select { height: 46px; padding: 6px 12px; border-radius: 10px; }
-.add-quotation-section .aq-customer-label { font-size: 11px; margin-bottom: 1px; }
-.add-quotation-section .aq-product-search,
-.add-quotation-section .aq-region-select { height: 46px; border-radius: 10px; font-size: 14px; }
-.add-quotation-section .aq-product-search input { font-size: 14px; }
-.add-quotation-section .aq-add-product-btn,
-.add-quotation-section .aq-details-btn { min-height: 46px; padding: 8px 12px; font-size: 14px; border-radius: 10px; }
-.add-quotation-section .aq-table thead th { padding: 12px; font-size: 12.5px; }
-.add-quotation-section .aq-table tbody td { padding: 10px 12px; }
-.add-quotation-section .aq-notes-card { margin-top: 16px; }
-.add-quotation-section .aq-section-title { font-size: 15px; margin-bottom: 10px; }
-.add-quotation-section .aq-notes { min-height: 110px; font-size: 14px; border-radius: 10px; }
-.add-quotation-section .aq-summary { margin-top: 16px; }
-.add-quotation-section .aq-summary-row { font-size: 13.5px; margin-bottom: 9px; }
-.add-quotation-section .aq-summary-total { font-size: 18px; padding-top: 12px; }
-.add-quotation-section .aq-save-btn { padding: 10px 18px; font-size: 14px; border-radius: 9px; }
-.add-quotation-section .aq-cancel-btn { padding-top: 10px; padding-bottom: 10px; font-size: 14px; }
-
-/* RESPONSIVE */
-
-@media (max-width: 1199px) {
-    .add-quotation-section .aq-info-item {
-        padding: 15px 14px;
-    }
-
-    .add-quotation-section .aq-info-item:nth-child(2n) {
-        border-right: none;
-    }
-}
-
-@media (max-width: 767px) {
-    .add-quotation-section {
-        padding: 15px 12px;
-    }
-
-    .add-quotation-section .aq-title {
-        font-size: 22px;
-    }
-
-    .add-quotation-section .aq-subtitle {
-        font-size: 14px;
-    }
-
-    .add-quotation-section .aq-header-btn {
-        padding: 12px 14px;
-        font-size: 14px;
-    }
-
-    .add-quotation-section .aq-info-item {
-        border-right: none;
-        border-bottom: 1px solid #e8edf4;
-    }
-
-    .add-quotation-section .aq-info-item:last-child {
-        border-bottom: none;
-    }
-
-    .add-quotation-section .aq-product-toolbar {
-        padding: 12px;
-    }
-
-    .add-quotation-section .aq-notes-card {
-        padding: 13px;
-    }
-
-    .add-quotation-section .aq-notes {
-        font-size: 14px;
-    }
-}
-</style>
 
 <!-- ADD QUOTATION MAIN SECTION -->
 <section class="add-quotation-section">
@@ -1054,76 +612,36 @@ include 'header.php';
 
     </div>
 
-    <!-- SUMMARY AND SAVE -->
-    <div class="aq-card aq-summary">
-
-        <div class="row g-4 align-items-start">
-
-            <div class="col-md-6">
-                <h3 class="aq-section-title mb-2">
-                    <?php echo e($L["summary"]); ?>
-                </h3>
-
-                <p class="text-secondary mb-0">
-                    Review product quantities, taxes and discounts
-                    before saving.
-                </p>
-            </div>
-
-            <div class="col-md-6 col-lg-4 ms-lg-auto">
-
-                <div class="aq-summary-row">
-                    <span>Subtotal</span>
-                    <strong id="subtotalAmount">Rs 0.00</strong>
-                </div>
-
-                <div class="aq-summary-row">
-                    <span>Discount</span>
-                    <strong id="totalDiscount">Rs 0.00</strong>
-                </div>
-
-                <div class="aq-summary-row">
-                    <span>Tax</span>
-                    <strong id="totalTax">Rs 0.00</strong>
-                </div>
-
-                <div class="aq-summary-row aq-summary-total">
-                    <span>Grand Total</span>
-                    <strong id="grandTotal">Rs 0.00</strong>
-                </div>
-
-            </div>
-
-            <div class="col-12 text-end">
-
-                <a href="<?php echo e($L["listUrl"]); ?>"
-                   class="btn btn-light border px-4 me-2 aq-cancel-btn">
-                    Cancel
-                </a>
-
-                <button type="button"
-                        class="aq-save-btn"
-                        id="saveQuotationBtn">
-
-                    <i class="bi bi-floppy me-2"></i>
-                    <?php echo e($L["save"]); ?>
-
-                </button>
-
-            </div>
-
-            <div class="col-12">
-                <div id="quotationError"
-                     class="alert alert-danger d-none"
-                     role="alert"></div>
-            </div>
-
-        </div>
-
+    <!-- TOTALS (shown once products are added) -->
+    <div class="aq-totals d-none" id="aqTotals">
+        <div><span>Subtotal</span><strong id="subtotalAmount">Rs 0.00</strong></div>
+        <div><span>Discount</span><strong id="totalDiscount">Rs 0.00</strong></div>
+        <div><span>Tax</span><strong id="totalTax">Rs 0.00</strong></div>
+        <div class="grand"><span>Grand Total</span><strong id="grandTotal">Rs 0.00</strong></div>
     </div>
+
+    <div id="quotationError"
+         class="alert alert-danger d-none mt-3 mb-0"
+         role="alert"></div>
 
 </div>
 </section>
+
+<!-- BOTTOM ACTION BAR -->
+<div class="aq-actionbar">
+    <button type="button" class="aq-bar-btn clear" id="clearAllBtn">
+        <i class="bi bi-trash3"></i> Clear All
+    </button>
+    <button type="button" class="aq-bar-btn whatsapp" id="whatsappBtn">
+        <i class="bi bi-whatsapp"></i> WhatsApp
+    </button>
+    <button type="button" class="aq-bar-btn primary" id="saveQuotationBtn" data-mode="master">
+        <?php echo e($L["saveMaster"]); ?>
+    </button>
+    <button type="button" class="aq-bar-btn primary" id="saveGenerateBtn" data-mode="generate">
+        <?php echo e($L["saveGenerate"]); ?>
+    </button>
+</div>
 
 <!-- PRODUCT SELECTION MODAL -->
 <div class="modal fade aq-modal"
@@ -1294,6 +812,7 @@ include 'header.php';
         $("totalDiscount").textContent = formatMoney(totalDiscount);
         $("totalTax").textContent = formatMoney(totalTax);
         $("grandTotal").textContent = formatMoney(grandTotal);
+        $("aqTotals").classList.toggle("d-none", quotationItems.length === 0);
 
         return {
             subtotal,
@@ -1669,19 +1188,65 @@ include 'header.php';
         renderQuotationItems();
     });
 
-    // Save quotation through PHP.
-    $("saveQuotationBtn").addEventListener("click", async () => {
+    // Clear All: remove every product line.
+    $("clearAllBtn").addEventListener("click", () => {
+        if (!quotationItems.length) return;
+        if (!confirm("Remove all products from this <?php echo $isOrder ? 'order' : 'quotation'; ?>?")) return;
+        quotationItems = [];
+        $("quotationError").classList.add("d-none");
+        renderQuotationItems();
+    });
+
+    // WhatsApp: send the item list + total to the selected customer.
+    const customerMobiles = <?php echo json_encode(array_column($customers, 'mobile', 'id'), json_flags()); ?>;
+
+    $("whatsappBtn").addEventListener("click", () => {
+        if (!quotationItems.length) {
+            showError("Add at least one product before sending on WhatsApp.");
+            return;
+        }
+        const totals = calculateTotals();
+        const select = $("customerSelect");
+        const name = select.options[select.selectedIndex] ? select.options[select.selectedIndex].text.trim() : "";
+        const lines = quotationItems.map((item, i) =>
+            `${i + 1}. ${item.name} - ${item.quantity} x ${formatMoney(item.rate)} = ${formatMoney(item.amount)}`
+        );
+        const text = [
+            `*Gullapudi Glass & Plywood - <?php echo e($L["waTitle"]); ?>*`,
+            name ? `Customer: ${name}` : null,
+            `Date: ${$("quotationDate").value}`,
+            "",
+            ...lines,
+            "",
+            `Subtotal: ${formatMoney(totals.subtotal)}`,
+            totals.discount ? `Discount: ${formatMoney(totals.discount)}` : null,
+            `Tax: ${formatMoney(totals.tax)}`,
+            `*Grand Total: ${formatMoney(totals.grandTotal)}*`
+        ].filter(line => line !== null).join("\n");
+
+        let mobile = String(customerMobiles[select.value] || "").replace(/\D/g, "");
+        if (mobile.length === 10) mobile = "91" + mobile;
+        const url = "https://wa.me/" + (mobile ? mobile : "") + "?text=" + encodeURIComponent(text);
+        window.open(url, "_blank", "noopener");
+    });
+
+    function showError(message) {
+        const errorBox = $("quotationError");
+        errorBox.textContent = message;
+        errorBox.classList.remove("d-none");
+        errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    // Save through PHP. mode = "master" (save) or "generate" (save + open printable copy).
+    async function saveQuotation(mode, saveBtn) {
 
         const errorBox = $("quotationError");
-        const saveBtn = $("saveQuotationBtn");
 
         errorBox.classList.add("d-none");
         errorBox.textContent = "";
 
         if (quotationItems.length === 0) {
-            errorBox.textContent =
-                "Please add at least one product.";
-            errorBox.classList.remove("d-none");
+            showError("Please add at least one product.");
             return;
         }
 
@@ -1722,6 +1287,7 @@ include 'header.php';
             customer_id: Number($("customerSelect").value),
             from_quotation: prefill ? prefill.quotation_id : 0,
             notes: $("quotationNotes").value,
+            mode: mode,
             items: quotationItems.map(item => ({
                 product_id: item.product_id,
                 quantity: item.quantity,
@@ -1739,7 +1305,9 @@ include 'header.php';
             JSON.stringify(payload)
         );
 
-        saveBtn.disabled = true;
+        const buttons = [$("saveQuotationBtn"), $("saveGenerateBtn")];
+        const label = saveBtn.innerHTML;
+        buttons.forEach(b => b.disabled = true);
         saveBtn.textContent = "Saving...";
 
         try {
@@ -1765,15 +1333,14 @@ include 'header.php';
 
         } catch (error) {
 
-            errorBox.textContent = error.message;
-            errorBox.classList.remove("d-none");
-
-            saveBtn.disabled = false;
-
-            saveBtn.innerHTML =
-                '<i class="bi bi-floppy me-2"></i>Save Quotation';
+            showError(error.message);
+            buttons.forEach(b => b.disabled = false);
+            saveBtn.innerHTML = label;
         }
-    });
+    }
+
+    $("saveQuotationBtn").addEventListener("click", function () { saveQuotation("master", this); });
+    $("saveGenerateBtn").addEventListener("click", function () { saveQuotation("generate", this); });
 
     // Initial empty table.
     renderQuotationItems();

@@ -50,8 +50,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_response(['success' => false, 'message' => 'Invalid data.'], 422);
     }
 
-    $customerId = (int)($payload['customer_id'] ?? 0);
-    $customer = db_one('SELECT id, name FROM customers WHERE id = ?', [$customerId]);
+    // Customer: an existing one (customer_id) or a new one typed on the invoice (new_customer).
+    $newCustomer = null;
+    if (is_array($payload['new_customer'] ?? null)) {
+        $nc = $payload['new_customer'];
+        $newCustomer = [
+            'name' => mb_substr(trim((string)($nc['name'] ?? '')), 0, 200),
+            'mobile' => preg_replace('/\D/', '', (string)($nc['mobile'] ?? '')),
+            'gstin' => strtoupper(mb_substr(trim((string)($nc['gstin'] ?? '')), 0, 20)),
+            'address' => mb_substr(trim((string)($nc['address'] ?? '')), 0, 500),
+        ];
+        if ($newCustomer['name'] === '') {
+            json_response(['success' => false, 'message' => 'Enter the customer name.'], 422);
+        }
+        if (!preg_match('/^[0-9]{10}$/', $newCustomer['mobile'])) {
+            json_response(['success' => false, 'message' => 'Enter a valid 10-digit mobile number for the customer.'], 422);
+        }
+        // Same mobile already saved -> use that customer instead of creating a duplicate.
+        $customer = db_one('SELECT id, name FROM customers WHERE mobile = ? ORDER BY id LIMIT 1', [$newCustomer['mobile']]);
+        if ($customer) {
+            $newCustomer = null;
+        }
+        $customerId = $customer ? (int)$customer['id'] : 0;
+    } else {
+        $customerId = (int)($payload['customer_id'] ?? 0);
+        $customer = db_one('SELECT id, name FROM customers WHERE id = ?', [$customerId]);
+    }
     $date = (string)($payload['date'] ?? '');
     $due = (string)($payload['due_date'] ?? '');
     $items = $payload['items'] ?? [];
@@ -61,8 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         return $o && $o->format('Y-m-d') === $d;
     };
 
-    if (!$customer) {
-        json_response(['success' => false, 'message' => 'Please select a customer (add customers in the Customers page first).'], 422);
+    if (!$customer && !$newCustomer) {
+        json_response(['success' => false, 'message' => 'Please select a customer, or choose "New Customer" and type the details.'], 422);
     }
     if (!$validDate($date) || !$validDate($due) || $due < $date) {
         json_response(['success' => false, 'message' => 'Check the invoice date and due date.'], 422);
@@ -79,7 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     foreach ($items as $n => $item) {
         $line = $n + 1;
-        $productId = (int)($item['product_id'] ?? 0);
+        $isService = ($item['type'] ?? '') === 'service';
+        $productId = $isService ? 0 : (int)($item['product_id'] ?? 0);
         $qty = $item['quantity'] ?? null;
         $rate = $item['rate'] ?? null;
         $tax = $item['tax'] ?? null;
@@ -107,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $name = trim((string)($item['name'] ?? ''));
             if ($name === '') {
-                json_response(['success' => false, 'message' => "Line $line: enter an item name."], 422);
+                json_response(['success' => false, 'message' => "Line $line: enter " . ($isService ? 'the service description.' : 'an item name.')], 422);
             }
             $name = mb_substr($name, 0, 200);
             $thickness = null;
@@ -154,6 +179,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->beginTransaction();
 
     try {
+        // New customer typed on the invoice: save it to Customers (same transaction).
+        if ($newCustomer) {
+            $customerId = db_insert('customers', [
+                'name' => $newCustomer['name'],
+                'mobile' => $newCustomer['mobile'],
+                'gstin' => $newCustomer['gstin'] ?: null,
+                'addresses' => json_encode($newCustomer['address'] !== ''
+                    ? [['label' => 'Billing', 'address' => $newCustomer['address']]]
+                    : []),
+                'status' => 'active',
+            ]);
+            $customer = ['id' => $customerId, 'name' => $newCustomer['name']];
+            log_activity('Customers', 'Added customer ' . $newCustomer['name'] . ' (from Direct Invoice)');
+        }
+
         $orderNumber = next_number('orders', 'order_number', 'ORD-');
         $invoiceNumber = next_number('invoices', 'invoice_number', 'SI-');
 
@@ -309,6 +349,37 @@ include 'header.php';
     text-transform: uppercase;
     margin-bottom: 10px;
 }
+.direct-invoice-section .di-block-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.direct-invoice-section .di-switch {
+    display: inline-flex;
+    background: #f1f4f9;
+    border-radius: 8px;
+    padding: 3px;
+}
+.direct-invoice-section .di-switch button {
+    border: 0;
+    background: transparent;
+    padding: 5px 11px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #5b6b82;
+    white-space: nowrap;
+}
+.direct-invoice-section .di-switch button.active {
+    background: #fff;
+    color: #1479ff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+}
+.direct-invoice-section .di-upper { text-transform: uppercase; }
+.direct-invoice-section .di-upper::placeholder { text-transform: none; }
 .direct-invoice-section .di-label { font-size: 12.5px; font-weight: 700; color: #4b5a72; margin-bottom: 4px; display: block; }
 .direct-invoice-section .di-input,
 .direct-invoice-section .di-select {
@@ -330,7 +401,7 @@ include 'header.php';
 
 /* Items */
 .direct-invoice-section .di-items-wrap { margin-top: 20px; border: 1px solid #e6ebf2; border-radius: 12px; overflow: auto; }
-.direct-invoice-section .di-items { width: 100%; min-width: 920px; border-collapse: collapse; }
+.direct-invoice-section .di-items { width: 100%; min-width: 1020px; border-collapse: collapse; }
 .direct-invoice-section .di-items thead th {
     background: #f3f6fb;
     font-size: 12px !important;
@@ -355,6 +426,14 @@ include 'header.php';
 .direct-invoice-section .di-line-amount { font-weight: 750; text-align: right; white-space: nowrap; }
 .direct-invoice-section .di-remove { border: 0; background: transparent; color: #ef4444; font-size: 16px; padding: 4px 6px; }
 .direct-invoice-section .di-remove:hover { color: #b91c1c; }
+.direct-invoice-section .di-type { height: 34px; font-size: 13px !important; font-weight: 700; padding: 4px 6px; }
+.direct-invoice-section tr[data-type="product"] .di-type { color: #1d4ed8; background: #eff5ff; border-color: #cfe0ff; }
+.direct-invoice-section tr[data-type="service"] .di-type { color: #7c3aed; background: #f5f0ff; border-color: #e2d6fb; }
+.direct-invoice-section .di-add-row { display: flex; border-top: 1px solid #e6ebf2; }
+.direct-invoice-section .di-add-row .di-add-line { border-top: 0; }
+.direct-invoice-section .di-add-row .di-add-line + .di-add-line { border-left: 1px solid #e6ebf2; }
+.direct-invoice-section .di-add-line.service { color: #7c3aed; }
+.direct-invoice-section .di-add-line.service:hover { background: #f7f2ff; }
 .direct-invoice-section .di-add-line {
     display: flex;
     align-items: center;
@@ -465,10 +544,44 @@ include 'header.php';
                 <!-- BILL TO -->
                 <div class="col-lg-6">
                     <div class="di-block">
-                        <div class="di-block-title">Bill To</div>
+                        <div class="di-block-head">
+                            <div class="di-block-title mb-0">Bill To</div>
+                            <div class="di-switch" role="tablist" aria-label="Customer type">
+                                <button type="button" class="active" data-cust-mode="existing" role="tab" aria-selected="true">Existing Customer</button>
+                                <button type="button" data-cust-mode="new" role="tab" aria-selected="false"><i class="bi bi-plus-lg"></i> New Customer</button>
+                            </div>
+                        </div>
+
+                        <!-- NEW CUSTOMER (typed manually) -->
+                        <div id="diNewCustomer" class="d-none">
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="di-label" for="ncName">Customer Name <span class="text-danger">*</span></label>
+                                    <input type="text" id="ncName" class="di-input" maxlength="200" placeholder="Customer / firm name">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="di-label" for="ncMobile">Mobile <span class="text-danger">*</span></label>
+                                    <input type="tel" id="ncMobile" class="di-input" maxlength="10" inputmode="numeric" placeholder="10-digit mobile">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="di-label" for="ncGstin">GSTIN</label>
+                                    <input type="text" id="ncGstin" class="di-input di-upper" maxlength="20" placeholder="Optional">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="di-label" for="ncAddress">Address</label>
+                                    <input type="text" id="ncAddress" class="di-input" maxlength="500" placeholder="Optional">
+                                </div>
+                            </div>
+                            <div class="di-customer-info mt-2">
+                                <i class="bi bi-info-circle me-1"></i>This customer will also be saved in the Customers list.
+                            </div>
+                        </div>
+
+                        <!-- EXISTING CUSTOMER -->
+                        <div id="diExistingCustomer">
                         <select id="diCustomer" class="di-select">
                             <option value="">
-                                <?php echo $customers ? 'Select customer' : 'No customers yet - add one in Customers'; ?>
+                                <?php echo $customers ? 'Select customer' : 'No customers yet - use "New Customer"'; ?>
                             </option>
                             <?php foreach ($customers as $c): ?>
                                 <option value="<?php echo $c['id']; ?>">
@@ -478,6 +591,7 @@ include 'header.php';
                         </select>
                         <div class="di-customer-info" id="diCustomerInfo">
                             Choose the customer to bill. Mobile, GSTIN and address appear here.
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -530,8 +644,9 @@ include 'header.php';
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th style="min-width:260px">Item / Description</th>
-                            <th style="width:110px">HSN</th>
+                            <th style="width:112px">Type</th>
+                            <th style="min-width:250px">Item / Service Description</th>
+                            <th style="width:110px">HSN / SAC</th>
                             <th style="width:90px" class="num">Qty</th>
                             <th style="width:120px" class="num">Rate</th>
                             <th style="width:85px" class="num">Disc %</th>
@@ -542,15 +657,27 @@ include 'header.php';
                     </thead>
                     <tbody id="diLines"></tbody>
                 </table>
-                <button type="button" class="di-add-line" id="diAddLine">
-                    <i class="bi bi-plus-circle"></i> Add Line
-                </button>
+                <div class="di-add-row">
+                    <button type="button" class="di-add-line" id="diAddLine">
+                        <i class="bi bi-box-seam"></i> Add Product
+                    </button>
+                </div>
             </div>
 
             <datalist id="diProducts">
                 <?php foreach ($products as $p): ?>
                     <option value="<?php echo e($p['name']); ?>"></option>
                 <?php endforeach; ?>
+            </datalist>
+            <datalist id="diServices">
+                <option value="Fitting / Installation Charges"></option>
+                <option value="Labour Charges"></option>
+                <option value="Glass Cutting Charges"></option>
+                <option value="Edge Polishing Charges"></option>
+                <option value="Transport Charges"></option>
+                <option value="Loading &amp; Unloading Charges"></option>
+                <option value="Measurement / Site Visit Charges"></option>
+                <option value="Repair / Service Charges"></option>
             </datalist>
 
             <!-- WORDS + TOTALS -->
@@ -591,7 +718,7 @@ include 'header.php';
         </div>
 
         <div class="di-footer">
-            <span class="di-hint"><i class="bi bi-info-circle me-1"></i>Pick a product from the list to fill in rate, HSN and GST, or type any custom line.</span>
+            <span class="di-hint"><i class="bi bi-info-circle me-1"></i>Products fill rate, HSN and GST from the catalogue and reduce stock. Services (fitting, labour, transport...) never change stock.</span>
             <div class="d-flex gap-2">
                 <a href="invoices.php" class="di-btn">Cancel</a>
                 <button type="button" class="di-btn" id="diSave"><i class="bi bi-floppy"></i> Save</button>
@@ -645,12 +772,18 @@ include 'header.php';
     }
 
     /* ---- Lines ---- */
-    function addLine() {
+    function addLine(type) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td class="di-line-no"></td>
             <td>
-                <input type="text" class="di-input" data-f="name" list="diProducts" maxlength="200" placeholder="Search product or type a custom item">
+                <select class="di-input di-type" data-f="type" aria-label="Line type">
+                    <option value="product">Product</option>
+                    <option value="service">Service</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" class="di-input" data-f="name" maxlength="200">
                 <div class="di-line-meta" data-f="meta"></div>
             </td>
             <td><input type="text" class="di-input" data-f="hsn" maxlength="30"></td>
@@ -662,9 +795,21 @@ include 'header.php';
             <td><button type="button" class="di-remove" title="Remove line"><i class="bi bi-x-circle-fill"></i></button></td>`;
         tr.dataset.productId = "";
         lines.appendChild(tr);
+        setType(tr, type || "product");
         renumber();
         recalc();
         return tr;
+    }
+
+    function setType(tr, type) {
+        const service = type === "service";
+        tr.dataset.type = service ? "service" : "product";
+        field(tr, "type").value = tr.dataset.type;
+        const name = field(tr, "name");
+        name.setAttribute("list", service ? "diServices" : "diProducts");
+        name.placeholder = service ? "Service description (e.g. Fitting charges)" : "Search product or type a custom item";
+        field(tr, "hsn").placeholder = service ? "SAC" : "HSN";
+        applyProduct(tr);
     }
 
     function renumber() {
@@ -674,6 +819,11 @@ include 'header.php';
     function field(tr, f) { return tr.querySelector(`[data-f="${f}"]`); }
 
     function applyProduct(tr) {
+        if (tr.dataset.type === "service") {
+            tr.dataset.productId = "";
+            field(tr, "meta").textContent = field(tr, "name").value.trim() ? "Service (no stock change)" : "";
+            return;
+        }
         const p = productByName.get(field(tr, "name").value.trim().toLowerCase());
         const meta = field(tr, "meta");
         if (p) {
@@ -723,6 +873,11 @@ include 'header.php';
         if (e.target.dataset.f === "name") applyProduct(tr);
         recalc();
     });
+    lines.addEventListener("change", e => {
+        if (e.target.dataset.f !== "type") return;
+        setType(e.target.closest("tr"), e.target.value);
+        recalc();
+    });
     lines.addEventListener("click", e => {
         const btn = e.target.closest(".di-remove");
         if (!btn) return;
@@ -731,7 +886,7 @@ include 'header.php';
         renumber();
         recalc();
     });
-    $("diAddLine").addEventListener("click", () => field(addLine(), "name").focus());
+    $("diAddLine").addEventListener("click", () => field(addLine("product"), "name").focus());
     $("diRegion").addEventListener("change", recalc);
     $("diRound").addEventListener("change", recalc);
 
@@ -745,6 +900,31 @@ include 'header.php';
             : "Choose the customer to bill. Mobile, GSTIN and address appear here.";
     });
 
+    /* ---- Existing / New customer ---- */
+    let customerMode = "existing";
+
+    function setCustomerMode(mode) {
+        customerMode = mode;
+        document.querySelectorAll("[data-cust-mode]").forEach(btn => {
+            const on = btn.dataset.custMode === mode;
+            btn.classList.toggle("active", on);
+            btn.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        $("diNewCustomer").classList.toggle("d-none", mode !== "new");
+        $("diExistingCustomer").classList.toggle("d-none", mode !== "existing");
+        if (mode === "new") $("ncName").focus();
+    }
+
+    document.querySelectorAll("[data-cust-mode]").forEach(btn =>
+        btn.addEventListener("click", () => setCustomerMode(btn.dataset.custMode)));
+
+    $("ncMobile").addEventListener("input", function () {
+        this.value = this.value.replace(/\D/g, "").slice(0, 10);
+    });
+
+    // No saved customers yet -> start on "New Customer".
+    if (!customers.length) setCustomerMode("new");
+
     /* ---- Save ---- */
     function showError(msg) {
         $("diError").textContent = msg;
@@ -757,7 +937,8 @@ include 'header.php';
         const items = [...lines.rows]
             .filter(tr => field(tr, "name").value.trim() !== "")
             .map(tr => ({
-                product_id: tr.dataset.productId ? Number(tr.dataset.productId) : null,
+                type: tr.dataset.type,
+                product_id: tr.dataset.type === "product" && tr.dataset.productId ? Number(tr.dataset.productId) : null,
                 name: field(tr, "name").value.trim(),
                 hsn: field(tr, "hsn").value.trim(),
                 quantity: field(tr, "quantity").value,
@@ -766,7 +947,19 @@ include 'header.php';
                 tax: field(tr, "tax").value || 0
             }));
 
-        if (!$("diCustomer").value) return showError("Please select a customer.");
+        let newCustomer = null;
+        if (customerMode === "new") {
+            newCustomer = {
+                name: $("ncName").value.trim(),
+                mobile: $("ncMobile").value.trim(),
+                gstin: $("ncGstin").value.trim().toUpperCase(),
+                address: $("ncAddress").value.trim()
+            };
+            if (!newCustomer.name) return showError("Enter the customer name.");
+            if (!/^\d{10}$/.test(newCustomer.mobile)) return showError("Enter a valid 10-digit mobile number.");
+        } else if (!$("diCustomer").value) {
+            return showError('Please select a customer, or click "New Customer" to type one.');
+        }
         if (!items.length) return showError("Add at least one item line.");
 
         const buttons = [$("diSave"), $("diSavePrint")];
@@ -774,7 +967,8 @@ include 'header.php';
         try {
             const result = await App.post(window.location.pathname, {
                 invoice_data: JSON.stringify({
-                    customer_id: Number($("diCustomer").value),
+                    customer_id: newCustomer ? 0 : Number($("diCustomer").value),
+                    new_customer: newCustomer,
                     date: $("diDate").value,
                     due_date: $("diDue").value,
                     region: $("diRegion").value,

@@ -316,7 +316,7 @@ function doc_render(array $doc): void
                 <thead>
                     <tr>
                         <th style="width:24px">Sl<br>No.</th>
-                        <th style="text-align:left">Description of Goods</th>
+                        <th style="text-align:left">Description of Goods / Services</th>
                         <th style="width:58px">HSN/SAC</th>
                         <th style="width:38px">Qty</th>
                         <th style="width:62px">Rate<br>(Incl. of<br>Tax)</th>

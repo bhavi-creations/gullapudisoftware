@@ -7788,3 +7788,542 @@
   .dashboard-section .stock-icon { width: 36px; height: 36px; font-size: 16px; }
   .dashboard-section .stock-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 }
+
+
+
+
+
+
+
+
+/* ADD QUOTATION MAIN SECTION */
+
+.add-quotation-section {
+    background: #f6f8fd;
+    min-height: 100vh;
+    padding: 22px;
+    font-family: Arial, sans-serif;
+    color: #142238;
+}
+
+/* HEADER */
+
+.add-quotation-section .aq-title {
+    font-size: 26px;
+    font-weight: 750;
+    margin: 0 0 8px;
+}
+
+.add-quotation-section .aq-subtitle {
+    font-size: 15px;
+    font-weight: 600;
+    color: #64748b;
+    margin: 0;
+}
+
+.add-quotation-section .aq-header-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 13px;
+    background: white;
+    border: 1px solid #e1e7f0;
+    border-radius: 13px;
+    padding: 14px 18px;
+    color: #293b55;
+    font-size: 15px;
+    font-weight: 750;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.add-quotation-section .aq-header-btn:hover {
+    background: #edf4ff;
+    color: #1479ff;
+}
+
+/* MAIN PANELS */
+
+.add-quotation-section .aq-card {
+    background: #fff;
+    border: 1px solid #e0e6ef;
+    border-radius: 13px;
+    overflow: hidden;
+}
+
+/* QUOTATION INFORMATION */
+
+.add-quotation-section .aq-info-card {
+    margin-top: 27px;
+    margin-bottom: 18px;
+    padding: 16px 0;
+}
+
+.add-quotation-section .aq-info-item {
+    padding: 5px 20px;
+    border-right: 1px solid #e8edf4;
+    min-height: 65px;
+}
+
+.add-quotation-section .aq-info-item:last-child {
+    border-right: none;
+}
+
+.add-quotation-section .aq-info-label {
+    color: #61718a;
+    font-size: 14px;
+    font-weight: 650;
+    margin-bottom: 9px;
+}
+
+.add-quotation-section .aq-info-value {
+    font-size: 15px;
+    font-weight: 750;
+    color: #18283d;
+}
+
+.add-quotation-section .aq-info-value i {
+    color: #7187a5;
+    margin-right: 10px;
+    font-size: 17px;
+}
+
+.add-quotation-section .aq-date-input {
+    border: none;
+    background: transparent;
+    font-weight: 750;
+    color: #18283d;
+    font-size: 15px;
+    width: 155px;
+    outline: none;
+}
+
+.add-quotation-section .aq-info-select {
+    border: none;
+    background: transparent;
+    font-size: 15px;
+    font-weight: 700;
+    color: #18283d;
+    outline: none;
+    max-width: 100%;
+    cursor: pointer;
+}
+
+.add-quotation-section .aq-reference {
+    width: 100%;
+    height: 47px;
+    border: 1px solid #e1e7f0;
+    border-radius: 11px;
+    background: #f9fafc;
+    padding: 12px 14px;
+    font-size: 15px;
+    outline: none;
+}
+
+.add-quotation-section .aq-reference:focus {
+    border-color: #1479ff;
+}
+
+/* PRODUCT TOOLBAR */
+
+.add-quotation-section .aq-product-toolbar {
+    padding: 14px;
+    border-bottom: 1px solid #e6eaf1;
+}
+
+.add-quotation-section .aq-customer-select {
+    height: 56px;
+    width: 100%;
+    border: 1px solid #cde0ff;
+    border-radius: 12px;
+    background: #f4f8ff;
+    color: #1479ff;
+    padding: 10px 12px;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.add-quotation-section .aq-customer-label {
+    display: block;
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 3px;
+}
+
+.add-quotation-section .aq-customer-select select {
+    display: block;
+    width: 100%;
+    border: none;
+    outline: none;
+    color: #1479ff;
+    background: transparent;
+    font-weight: 750;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.add-quotation-section .aq-product-search {
+    height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    border: 1px solid #e1e7f0;
+    border-radius: 11px;
+    padding: 0 16px;
+    color: #71839c;
+    background: white;
+}
+
+.add-quotation-section .aq-product-search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+}
+
+.add-quotation-section .aq-region-select {
+    height: 54px;
+    width: 100%;
+    border: 1px solid #e1e7f0;
+    background: white;
+    border-radius: 12px;
+    padding: 0 15px;
+    font-size: 15px;
+    font-weight: 650;
+    color: #293b55;
+}
+
+.add-quotation-section .aq-add-product-btn {
+    background: #1479ff;
+    border: 1px solid #1479ff;
+    color: white;
+    border-radius: 12px;
+    padding: 16px 15px;
+    font-size: 15px;
+    font-weight: 750;
+    width: 100%;
+    min-height: 54px;
+}
+
+.add-quotation-section .aq-add-product-btn:hover {
+    background: #0868e6;
+}
+
+.add-quotation-section .aq-details-btn {
+    background: white;
+    border: 1px solid #e1e7f0;
+    border-radius: 12px;
+    padding: 15px 14px;
+    min-height: 54px;
+    width: 100%;
+    color: #293b55;
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.add-quotation-section .aq-details-btn:hover {
+    background: #f5f8fc;
+}
+
+/* PRODUCT TABLE */
+
+.add-quotation-section .aq-table {
+    width: 100%;
+    min-width: 1250px;
+    margin-bottom: 0;
+}
+
+.add-quotation-section .aq-table thead th {
+    padding: 22px 15px;
+    font-size: 14px;
+    font-weight: 750;
+    color: #293b55;
+    border-bottom: 1px solid #e8edf4;
+    white-space: nowrap;
+}
+
+.add-quotation-section .aq-table tbody td {
+    padding: 14px 12px;
+    vertical-align: middle;
+    color: #293b55;
+    font-size: 14px;
+}
+
+.add-quotation-section .aq-table tbody tr:hover {
+    background: #fafcff;
+}
+
+.add-quotation-section .aq-table-input {
+    width: 77px;
+    max-width: 100%;
+    height: 36px;
+    border: 1px solid #dfe6ef;
+    border-radius: 7px;
+    padding: 7px;
+    background: #fff;
+    color: #293b55;
+}
+
+.add-quotation-section .aq-table-input:focus {
+    outline: none;
+    border-color: #1479ff;
+}
+
+.add-quotation-section .aq-remove-btn {
+    color: #f0444c;
+    font-size: 16px;
+    border: none;
+    background: transparent;
+}
+
+.add-quotation-section .aq-empty-row {
+    padding: 22px !important;
+    text-align: center;
+    color: #94a3b8 !important;
+}
+
+/* NOTES */
+
+.add-quotation-section .aq-notes-card {
+    padding: 16px;
+    margin-top: 35px;
+}
+
+.add-quotation-section .aq-section-title {
+    font-size: 16px;
+    font-weight: 750;
+    margin-bottom: 15px;
+}
+
+.add-quotation-section .aq-notes {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    border: 1px solid #e2e8f0;
+    background: #fafbfe;
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #34445d;
+    outline: none;
+}
+
+.add-quotation-section .aq-notes:focus {
+    border-color: #1479ff;
+}
+
+/* TOTAL AND SAVE */
+
+.add-quotation-section .aq-summary {
+    padding: 18px;
+    margin-top: 20px;
+}
+
+.add-quotation-section .aq-summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.add-quotation-section .aq-summary-total {
+    font-size: 20px;
+    font-weight: 750;
+    color: #152239;
+    padding-top: 16px;
+    border-top: 1px solid #e1e7f0;
+}
+
+.add-quotation-section .aq-save-btn {
+    background: #1479ff;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 15px 20px;
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.add-quotation-section .aq-save-btn:disabled {
+    opacity: .6;
+}
+
+/* MODAL */
+
+.aq-modal .modal-content {
+    border: none;
+    border-radius: 15px;
+}
+
+.aq-modal .modal-header,
+.aq-modal .modal-footer {
+    padding: 16px 20px;
+}
+
+.aq-modal .modal-body {
+    padding: 20px;
+}
+
+
+/* Compact + aligned (shared look) */
+.add-quotation-section .aq-header-btn { padding: 9px 14px; gap: 8px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-info-card { margin-top: 16px; margin-bottom: 16px; padding: 12px 0; }
+.add-quotation-section .aq-info-item { min-height: 0; height: 100%; padding: 4px 18px; display: flex; flex-direction: column; justify-content: flex-start; }
+.add-quotation-section .aq-info-label { font-size: 12.5px; margin-bottom: 6px; }
+.add-quotation-section .aq-date-input, .add-quotation-section .aq-info-select, .add-quotation-section .aq-info-value { font-size: 14px; }
+.add-quotation-section .aq-reference { height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 8px; }
+.add-quotation-section .aq-product-toolbar { padding: 12px 14px; }
+.add-quotation-section .aq-customer-select { height: 46px; padding: 6px 12px; border-radius: 10px; }
+.add-quotation-section .aq-customer-label { font-size: 11px; margin-bottom: 1px; }
+.add-quotation-section .aq-product-search,
+.add-quotation-section .aq-region-select { height: 46px; border-radius: 10px; font-size: 14px; }
+.add-quotation-section .aq-product-search input { font-size: 14px; }
+.add-quotation-section .aq-add-product-btn,
+.add-quotation-section .aq-details-btn { min-height: 46px; padding: 8px 12px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-table thead th { padding: 12px; font-size: 12.5px; }
+.add-quotation-section .aq-table tbody td { padding: 10px 12px; }
+.add-quotation-section .aq-notes-card { margin-top: 16px; }
+.add-quotation-section .aq-section-title { font-size: 15px; margin-bottom: 10px; }
+.add-quotation-section .aq-notes { min-height: 110px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-summary { margin-top: 16px; }
+.add-quotation-section .aq-summary-row { font-size: 13.5px; margin-bottom: 9px; }
+.add-quotation-section .aq-summary-total { font-size: 18px; padding-top: 12px; }
+.add-quotation-section .aq-save-btn { padding: 10px 18px; font-size: 14px; border-radius: 9px; }
+.add-quotation-section .aq-cancel-btn { padding-top: 10px; padding-bottom: 10px; font-size: 14px; }
+
+/* Full-width POS layout: room at the bottom for the fixed action bar */
+.add-quotation-section { padding-bottom: 96px; }
+.add-quotation-section .aq-notes-card { min-height: 170px; }
+
+/* Totals strip under the notes */
+.add-quotation-section .aq-totals {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 14px;
+    padding: 12px 18px;
+    background: #fff;
+    border: 1px solid #e0e6ef;
+    border-radius: 12px;
+    font-size: 13.5px;
+}
+.add-quotation-section .aq-totals.d-none { display: none !important; }
+.add-quotation-section .aq-totals div { display: flex; align-items: baseline; gap: 8px; }
+.add-quotation-section .aq-totals span { color: #64748b; }
+.add-quotation-section .aq-totals strong { color: #142238; }
+.add-quotation-section .aq-totals .grand strong { font-size: 18px; color: #1479ff; }
+
+/* Fixed bottom action bar (Clear All / WhatsApp / Save buttons) */
+.aq-actionbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1030;
+    display: grid;
+    grid-template-columns: auto auto 1fr 1fr;
+    gap: 8px;
+    padding: 9px 12px;
+    background: #fff;
+    border-top: 1px solid #e3e8f0;
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, .06);
+}
+/* Sit next to the sidebar (226px); full width once the sidebar collapses */
+.sidebar-page-content:not(.no-sidebar) .aq-actionbar { left: 226px; }
+@media (max-width: 991px) {
+    .sidebar-page-content:not(.no-sidebar) .aq-actionbar { left: 0; }
+}
+.aq-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-weight: 700;
+    background: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.aq-bar-btn.clear { border: 1px solid #f3b4b4; color: #e5484d; }
+.aq-bar-btn.clear:hover { background: #fff5f5; }
+.aq-bar-btn.whatsapp { border: 1px solid #9fdfb5; color: #16a34a; }
+.aq-bar-btn.whatsapp:hover { background: #f0fdf4; }
+.aq-bar-btn.primary { border: 1px solid #1479ff; background: #1479ff; color: #fff; }
+.aq-bar-btn.primary:hover { background: #0868e6; }
+.aq-bar-btn:disabled { opacity: .65; cursor: wait; }
+
+@media (max-width: 767px) {
+    .aq-actionbar { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; }
+    .aq-bar-btn {
+        min-width: 0;
+        height: auto;
+        min-height: 40px;
+        padding: 6px 8px;
+        font-size: 12.5px;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.2;
+    }
+    .add-quotation-section { padding-bottom: 150px; }
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1199px) {
+    .add-quotation-section .aq-info-item {
+        padding: 15px 14px;
+    }
+
+    .add-quotation-section .aq-info-item:nth-child(2n) {
+        border-right: none;
+    }
+}
+
+@media (max-width: 767px) {
+    .add-quotation-section {
+        padding: 15px 12px;
+    }
+
+    .add-quotation-section .aq-title {
+        font-size: 22px;
+    }
+
+    .add-quotation-section .aq-subtitle {
+        font-size: 14px;
+    }
+
+    .add-quotation-section .aq-header-btn {
+        padding: 12px 14px;
+        font-size: 14px;
+    }
+
+    .add-quotation-section .aq-info-item {
+        border-right: none;
+        border-bottom: 1px solid #e8edf4;
+    }
+
+    .add-quotation-section .aq-info-item:last-child {
+        border-bottom: none;
+    }
+
+    .add-quotation-section .aq-product-toolbar {
+        padding: 12px;
+    }
+
+    .add-quotation-section .aq-notes-card {
+        padding: 13px;
+    }
+
+    .add-quotation-section .aq-notes {
+        font-size: 14px;
+    }
+}

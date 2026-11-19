@@ -808,3 +808,9 @@ body {
 
 /* Quotations: link-style row actions (print / download) */
 .quotation-section a.qt-action-btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Full-screen pages ($fullScreen = true in PHP, e.g. POS): no sidebar offset */
+.sidebar-page-content.no-sidebar {
+    margin-left: 0 !important;
+    padding-top: 0 !important;
+}

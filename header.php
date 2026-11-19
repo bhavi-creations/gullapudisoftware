@@ -27,6 +27,12 @@ $pageTitle = $pageTitle ?? 'Admin Dashboard';
 
 <body>
 
-<?php include __DIR__ . '/sidebar.php'; ?>
+<?php
+// Pages can set $fullScreen = true (e.g. the POS screens) to hide the sidebar.
+$fullScreen = !empty($fullScreen);
+if (!$fullScreen) {
+    include __DIR__ . '/sidebar.php';
+}
+?>
 
-<main class="sidebar-page-content" id="pageContent">
+<main class="sidebar-page-content<?php echo $fullScreen ? ' no-sidebar' : ''; ?>" id="pageContent">
