@@ -13,7 +13,7 @@ function orders_all(): array
     return cast_rows(
         db_all('SELECT o.id, o.order_number, o.date, o.delivery_date, o.customer, o.salesman, o.reference,
                        o.region, o.subtotal, o.discount, o.tax, o.amount, o.status,
-                       i.invoice_number, i.status AS invoice_status
+                       i.invoice_number, i.status AS invoice_status, o.invoice_id
                 FROM orders o LEFT JOIN invoices i ON i.id = o.invoice_id
                 ORDER BY o.id DESC'),
         [],
@@ -267,36 +267,56 @@ include 'header.php';
     async function view(id) {
         const o = orders.find(x => x.id === id);
         if (!o) return;
-        $("viewOrderTitle").textContent = "Order " + o.order_number;
-        $("viewOrderBody").innerHTML = '<div class="text-center py-4 text-muted">Loading...</div>';
-        viewModal.show();
+        const tones = { Delivered: "green", Completed: "green", "Invoice Raised": "blue", Cancelled: "red", Pending: "orange" };
+
+        const body = App.details({
+            title: "Order Details",
+            icon: "cart-check",
+            name: o.order_number,
+            subtitle: o.customer || "",
+            badge: { text: o.status, tone: tones[o.status] || "blue" },
+            rows: [
+                ["Customer", o.customer],
+                ["Order Date", fdate(o.date)],
+                ["Invoice", o.invoice_number || "-"],
+                ["Salesman", o.salesman || "-"],
+                ["Region", o.region || "-"],
+                ["Reference", o.reference || "-"],
+                ["Subtotal", money(o.subtotal)],
+                ["Discount", money(o.discount)],
+                ["Tax", money(o.tax)],
+                ["Grand Total", money(o.amount)]
+            ],
+            html: '<div class="details-items text-muted">Loading items...</div>',
+            actions: [
+                ...(o.invoice_id ? [{ label: "Print Invoice", icon: "printer-fill", tone: "primary", href: "invoice-print.php?id=" + o.invoice_id, newTab: true }] : []),
+                { label: "Delete Order", icon: "trash3", tone: "danger", onClick: () => rowAction("delete", id) }
+            ]
+        });
+
         try {
             const { items } = await App.post("orders.php", { action: "items", id });
-            $("viewOrderBody").innerHTML = `
-                <div class="row g-2 mb-3 small">
-                    <div class="col-sm-6"><b>Customer:</b> ${esc(o.customer)}</div>
-                    <div class="col-sm-6"><b>Date:</b> ${esc(fdate(o.date))}</div>
-                    <div class="col-sm-6"><b>Invoice:</b> ${esc(o.invoice_number || "-")}</div>
-                    <div class="col-sm-6"><b>Salesman:</b> ${esc(o.salesman || "-")}</div>
-                    <div class="col-sm-6"><b>Region:</b> ${esc(o.region || "-")}</div>
-                    <div class="col-sm-6"><b>Reference:</b> ${esc(o.reference || "-")}</div>
-                </div>
-                <div class="table-responsive">
-                <table class="table table-sm table-bordered">
-                    <thead><tr><th>Product</th><th>Qty</th><th>Rate</th><th>Tax%</th><th>Disc%</th><th class="text-end">Amount</th></tr></thead>
-                    <tbody>${items.map(it => `<tr><td>${esc(it.name)} <span class="text-muted small">${esc([it.thickness, it.size].filter(Boolean).join(" | "))}</span></td>
-                        <td>${it.quantity}</td><td>${money(it.rate)}</td><td>${it.tax}</td><td>${it.discount}</td><td class="text-end">${money(it.amount)}</td></tr>`).join("")}</tbody>
-                </table>
-                </div>
-                <div class="text-end">
-                    <div>Subtotal: <b>${money(o.subtotal)}</b></div>
-                    <div>Discount: <b>${money(o.discount)}</b></div>
-                    <div>Tax: <b>${money(o.tax)}</b></div>
-                    <div class="fs-5">Grand Total: <b>${money(o.amount)}</b></div>
-                </div>`;
+            const box = body.querySelector(".details-items");
+            if (!box) return;
+            box.classList.remove("text-muted");
+            box.innerHTML = items.length ? `
+                <table>
+                    <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Amount</th></tr></thead>
+                    <tbody>${items.map(it => `<tr>
+                        <td>${esc(it.name)}</td>
+                        <td class="text-end">${it.quantity}</td>
+                        <td class="text-end">${money(it.amount)}</td></tr>`).join("")}</tbody>
+                </table>` : "No item lines.";
         } catch (e) {
-            $("viewOrderBody").innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`;
+            const box = body.querySelector(".details-items");
+            if (box) box.textContent = e.message;
         }
+    }
+
+    // Run a table row action (same confirm + logic as the row buttons).
+    function rowAction(action, id) {
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+        if (btn) btn.click();
     }
 
     $("orderTableBody").addEventListener("click", async e => {

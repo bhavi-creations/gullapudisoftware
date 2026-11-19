@@ -760,6 +760,20 @@ include 'header.php';
                                 <i class="bi bi-eye"></i>
                             </button>
 
+                            <a class="qt-action-btn"
+                               href="quotation-print.php?id=${item.id}"
+                               target="_blank" rel="noopener"
+                               title="Print Quotation">
+                                <i class="bi bi-printer-fill"></i>
+                            </a>
+
+                            <a class="qt-action-btn"
+                               href="quotation-print.php?id=${item.id}&download=1"
+                               target="_blank" rel="noopener"
+                               title="Download PDF">
+                                <i class="bi bi-download"></i>
+                            </a>
+
                             <button type="button"
                                     class="qt-action-btn delete"
                                     data-action="delete"
@@ -814,50 +828,52 @@ include 'header.php';
 
         if (!item) return;
 
-        const details = [
-            ["Quotation ID", item.quotation_id],
-            ["Customer", item.customer || "-"],
-            ["Date", formatDate(item.date)],
-            ["Valid Upto", formatDate(item.valid_upto)],
-            ["Salesman", item.salesman || "-"],
-            ["Amount", formatAmount(item.amount)],
-            ["Status", item.status]
-        ];
+        const tones = { Converted: "green", Accepted: "green", Sent: "blue", Draft: "grey", Expired: "orange", Cancelled: "red" };
+        const open = item.status !== "Converted" && item.status !== "Cancelled";
 
-        // Load product lines from the database.
+        const body = App.details({
+            title: "Quotation Details",
+            icon: "file-earmark-text",
+            name: item.quotation_id,
+            subtitle: item.customer || "",
+            badge: { text: item.status, tone: tones[item.status] || "blue" },
+            rows: [
+                ["Customer", item.customer || "-"],
+                ["Quotation Date", formatDate(item.date)],
+                ["Valid Upto", formatDate(item.valid_upto)],
+                ["Salesman", item.salesman || "-"],
+                ["Amount", formatAmount(item.amount)]
+            ],
+            html: '<div class="details-items text-muted">Loading items...</div>',
+            actions: [
+                { label: "Download PDF", icon: "download", tone: "neutral", href: "quotation-print.php?download=1&id=" + item.id, newTab: true },
+                { label: "Print Quotation", icon: "printer-fill", tone: "neutral", href: "quotation-print.php?id=" + item.id, newTab: true },
+                ...(open ? [{ label: "Convert to Order", icon: "cart-check", tone: "primary", href: "add-order.php?quotation=" + item.id }] : []),
+                { label: "Delete Quotation", icon: "trash3", tone: "danger", onClick: () => rowAction("delete", id) }
+            ]
+        });
+
         App.post(window.location.pathname, { action: "items", id: item.id })
             .then(result => {
-                const holder = document.createElement("div");
-                holder.className = "table-responsive mt-3";
-                holder.innerHTML = `
-                    <table class="table table-sm table-bordered mb-2">
-                        <thead><tr><th>Product</th><th>Qty</th><th>Rate</th><th>Tax%</th><th class="text-end">Amount</th></tr></thead>
+                const box = body.querySelector(".details-items");
+                if (!box) return;
+                box.classList.remove("text-muted");
+                box.innerHTML = result.items.length ? `
+                    <table>
+                        <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Amount</th></tr></thead>
                         <tbody>${result.items.map(it => `<tr>
-                            <td>${escapeHTML(it.name)}</td><td>${it.quantity}</td>
-                            <td>${formatAmount(it.rate)}</td><td>${it.tax}</td>
+                            <td>${escapeHTML(it.name)}</td>
+                            <td class="text-end">${it.quantity}</td>
                             <td class="text-end">${formatAmount(it.amount)}</td></tr>`).join("")}</tbody>
-                    </table>
-                    ${item.status !== "Converted" && item.status !== "Cancelled"
-                        ? `<a class="btn btn-primary btn-sm" href="add-order.php?quotation=${item.id}">
-                               <i class="bi bi-cart-check me-1"></i>Convert to Order</a>` : ""}`;
-                $("viewQuotationContent").appendChild(holder);
+                    </table>` : "No item lines.";
             })
             .catch(() => {});
+    }
 
-        $("viewQuotationContent").innerHTML = details.map(
-            ([label, value]) => `
-                <div class="row py-3 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `
-        ).join("");
-
-        viewModal.show();
+    // Run a table row action (same confirm + logic as the row buttons).
+    function rowAction(action, id) {
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+        if (btn) btn.click();
     }
 
     function showMessage(message) {

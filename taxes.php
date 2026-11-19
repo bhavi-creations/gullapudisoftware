@@ -26,8 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'toggle_tax') {
             db_exec('UPDATE taxes SET enabled = 1 - enabled WHERE id = ?', [$id]);
         } else {
+            $name = db_value('SELECT name FROM taxes WHERE id = ?', [$id]);
             db_exec('DELETE FROM taxes WHERE id = ?', [$id]);
-            log_activity('Taxes', 'Deleted tax #' . $id);
+            log_activity('Taxes', 'Deleted tax ' . ($name ?: '#' . $id));
         }
         json_response(['success' => true, 'taxes' => taxes_all()]);
     }
@@ -58,26 +59,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_response(['success' => false, 'message' => 'Percentage cannot exceed 100.'], 422);
     }
 
-    if (db_value('SELECT COUNT(*) FROM taxes WHERE code = ?', [$taxId])) {
+    // id > 0 = edit an existing tax, otherwise add a new one.
+    $editId = (int)($_POST['id'] ?? 0);
+    if ($editId && !db_value('SELECT COUNT(*) FROM taxes WHERE id = ?', [$editId])) {
+        json_response(['success' => false, 'message' => 'Tax not found. Refresh the page.'], 404);
+    }
+
+    if (db_value('SELECT COUNT(*) FROM taxes WHERE code = ? AND id <> ?', [$taxId, $editId])) {
         json_response(['success' => false, 'message' => 'This Tax ID already exists.'], 409);
     }
 
-    $id = db_insert('taxes', [
+    $data = [
         'name' => mb_substr($taxName, 0, 150),
         'code' => mb_substr($taxId, 0, 50),
         'amount' => (float)$amount,
         'type' => $taxType,
-        'platforms' => 'All platforms',
         'enabled' => $enabled ? 1 : 0,
-    ]);
-    log_activity('Taxes', 'Added tax ' . $taxName);
+    ];
 
-    $newTax = cast_rows([db_one('SELECT id, name, code, amount, type, platforms, enabled FROM taxes WHERE id = ?', [$id])], ['enabled'], ['amount'])[0];
+    if ($editId) {
+        db_update('taxes', $data, $editId);
+        log_activity('Taxes', 'Updated tax ' . $taxName);
+        $message = 'Tax updated successfully.';
+    } else {
+        db_insert('taxes', $data + ['platforms' => 'All platforms']);
+        log_activity('Taxes', 'Added tax ' . $taxName);
+        $message = 'Tax added successfully.';
+    }
 
     json_response([
         'success' => true,
-        'message' => 'Tax added successfully.',
-        'tax' => $newTax
+        'message' => $message,
+        'taxes' => taxes_all()
     ]);
 }
 
@@ -323,6 +336,7 @@ include 'header.php';
                                 <th>TYPE</th>
                                 <th>PLATFORMS</th>
                                 <th>STATUS</th>
+                                <th class="text-center">ACTIONS</th>
                             </tr>
                         </thead>
 
@@ -746,7 +760,7 @@ include 'header.php';
 
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center py-5">
+                    <td colspan="6" class="text-center py-5">
                         No taxes found.
                     </td>
                 </tr>
@@ -787,6 +801,20 @@ include 'header.php';
                                 title="Click to ${tax.enabled ? "disable" : "enable"}">
                             ${tax.enabled ? "Enabled" : "Disabled"}
                         </button>
+                    </td>
+
+                    <td>
+                        <div class="tax-actions">
+                            <button type="button" class="tax-action" data-action="view" data-id="${tax.id}" title="View Tax">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button type="button" class="tax-action" data-action="edit" data-id="${tax.id}" title="Edit Tax">
+                                <i class="bi bi-pencil-fill"></i>
+                            </button>
+                            <button type="button" class="tax-action delete" data-action="delete" data-id="${tax.id}" title="Delete Tax">
+                                <i class="bi bi-trash3-fill"></i>
+                            </button>
+                        </div>
                     </td>
                 `;
 
@@ -829,6 +857,67 @@ include 'header.php';
                 renderTaxes();
             });
         });
+
+    // VIEW / EDIT / DELETE TAX
+    let editingTax = null;
+
+    function findTax(id) {
+        return taxes.find(t => Number(t.id) === Number(id));
+    }
+
+    function viewTax(id) {
+        const tax = findTax(id);
+        if (!tax) return;
+        App.details({
+            title: "Tax Details",
+            icon: "percent",
+            name: tax.name,
+            subtitle: tax.code,
+            badge: tax.enabled ? { text: "Enabled", tone: "green" } : { text: "Disabled", tone: "red" },
+            rows: [
+                ["Tax Name", tax.name],
+                ["Tax ID", tax.code],
+                ["Amount", tax.type === "Percentage" ? tax.amount + "%" : "Rs " + tax.amount],
+                ["Type", tax.type],
+                ["Platforms", tax.platforms],
+                ["Enabled", tax.enabled ? "Yes" : "No"]
+            ],
+            actions: [
+                { label: "Edit Tax", icon: "pencil-fill", tone: "primary", onClick: () => editTax(id) },
+                { label: "Delete Tax", icon: "trash3", tone: "danger", onClick: () => deleteTax(id) }
+            ]
+        });
+    }
+
+    function editTax(id) {
+        const tax = findTax(id);
+        if (!tax) return;
+        editingTax = tax;
+        taxModal.show();
+    }
+
+    async function deleteTax(id) {
+        const tax = findTax(id);
+        if (!tax) return;
+        if (!confirm(`Delete tax "${tax.name}"?\nProducts that use this tax keep their saved GST rate.`)) return;
+        try {
+            const result = await App.post(window.location.pathname, { action: "delete_tax", id: tax.id });
+            taxes = result.taxes;
+            renderTaxes();
+            App.toast("Tax deleted.");
+        } catch (error) {
+            App.toast(error.message, "error");
+        }
+    }
+
+    $("taxTableBody").addEventListener("click", function (event) {
+        const button = event.target.closest("[data-action]");
+        if (!button) return;
+        const id = Number(button.dataset.id);
+        if (button.dataset.action === "view") viewTax(id);
+        if (button.dataset.action === "edit") editTax(id);
+        if (button.dataset.action === "delete") deleteTax(id);
+    });
 
     // ENABLE / DISABLE TAX (saved in database)
     $("taxTableBody").addEventListener("click", async function (event) {
@@ -931,7 +1020,10 @@ include 'header.php';
     });
 
     // RESET MODAL
-    modalElement.addEventListener("show.bs.modal", function () {
+    modalElement.addEventListener("show.bs.modal", function (event) {
+
+        // Opened by the "Add Tax" button -> always a fresh, empty form.
+        if (event.relatedTarget) editingTax = null;
 
         $("addTaxForm").reset();
 
@@ -940,6 +1032,22 @@ include 'header.php';
 
         $("addTaxError").classList.add("d-none");
         $("addTaxError").textContent = "";
+
+        // Edit mode: fill the form with the selected tax.
+        const tax = editingTax;
+        $("addTaxModalLabel").textContent = tax ? "Edit Tax" : "Add Tax";
+        $("saveTaxBtn").textContent = tax ? "Update Tax" : "Save Tax";
+        if (tax) {
+            $("newTaxId").value = tax.code;
+            $("newTaxName").value = tax.name;
+            $("newTaxAmount").value = tax.amount;
+            (tax.type === "Currency" ? $("taxCurrency") : $("taxPercentage")).checked = true;
+            $("newTaxEnabled").checked = !!tax.enabled;
+        }
+    });
+
+    modalElement.addEventListener("hidden.bs.modal", function () {
+        editingTax = null;
     });
 
     // SAVE TAX VIA PHP AJAX
@@ -974,6 +1082,7 @@ include 'header.php';
 
         data.append("action", "save_tax");
         data.append("csrf_token", App.csrf());
+        if (editingTax) data.append("id", editingTax.id);
         data.append("tax_id", $("newTaxId").value.trim());
         data.append("tax_name", $("newTaxName").value.trim());
         data.append("tax_amount", $("newTaxAmount").value);
@@ -1007,14 +1116,17 @@ include 'header.php';
             }
 
             // Update current table from server response.
-            taxes.push(result.tax);
+            const wasEditing = !!editingTax;
+            taxes = result.taxes;
 
-            resetFilters();
+            if (wasEditing) {
+                renderTaxes();
+            } else {
+                resetFilters();
+            }
             taxModal.hide();
 
-            bootstrap.Toast.getOrCreateInstance(
-                $("taxSuccessToast")
-            ).show();
+            App.toast(result.message);
 
         } catch (error) {
 
@@ -1024,7 +1136,7 @@ include 'header.php';
         } finally {
 
             saveBtn.disabled = false;
-            saveBtn.textContent = "Save Tax";
+            saveBtn.textContent = editingTax ? "Update Tax" : "Save Tax";
         }
     });
 

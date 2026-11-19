@@ -677,30 +677,51 @@ include 'header.php';
 
         if (!product) return;
 
-        const details = [
-            ["Product Name", product.name],
-            ["Thickness", product.thickness],
-            ["Size", product.size],
-            ["Store", product.store],
-            ["Stock", product.stock],
-            ["Status", product.enabled ? "Enabled" : "Disabled"],
-            ["Featured", product.featured ? "Featured" : "Regular"]
-        ];
+        const stock = Number(product.stock || 0);
+        const low = Number(product.low_stock_alert || 0);
+        const money = v => "Rs " + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
-        $("viewProductContent").innerHTML = details.map(
-            ([label, value]) => `
-                <div class="row py-2 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `
-        ).join("");
+        App.details({
+            title: "Product Details",
+            icon: "box-seam",
+            name: product.name,
+            subtitle: [product.thickness, product.size].filter(Boolean).join(" · ") || product.category || "",
+            badge: !product.enabled
+                ? { text: "Disabled", tone: "red" }
+                : stock <= 0
+                    ? { text: "Out of Stock", tone: "red" }
+                    : stock <= low
+                        ? { text: "Low Stock", tone: "orange" }
+                        : { text: "Enabled", tone: "green" },
+            rows: [
+                ["Product Name", product.name],
+                ["Category", product.category || "None"],
+                ["Store", product.store || "None"],
+                ["Thickness", product.thickness],
+                ["Size", product.size],
+                ["HSN Code", product.hsn],
+                ["Price", money(product.price)],
+                ["GST", (product.tax_rate || 0) + "%"],
+                ["Stock", stock + (product.measurement_unit ? " " + product.measurement_unit : "")],
+                ["Featured", product.featured ? "Yes" : "No"],
+                ["Enabled", product.enabled ? "Yes" : "No"]
+            ],
+            actions: [
+                { label: "Edit Product", icon: "pencil-fill", tone: "primary", href: "add-product.php?id=" + encodeURIComponent(product.id) },
+                { label: "Delete Product", icon: "trash3", tone: "danger", onClick: () => deleteProduct(id) }
+            ]
+        });
+    }
 
-        viewModal.show();
+    async function deleteProduct(id) {
+        if (!confirm("Are you sure you want to delete this product?")) return;
+        try {
+            products = (await App.api("products.delete", { id })).products;
+            renderProducts();
+            App.toast("Product deleted.");
+        } catch (error) {
+            App.toast(error.message, "error");
+        }
     }
 
     // Action buttons.
@@ -722,16 +743,9 @@ include 'header.php';
             viewProduct(id);
         }
 
+        if (action === "delete") deleteProduct(id);
+
         try {
-            if (action === "delete") {
-
-                if (confirm("Are you sure you want to delete this product?")) {
-                    products = (await App.api("products.delete", { id })).products;
-                    renderProducts();
-                    App.toast("Product deleted.");
-                }
-            }
-
             if (action === "toggle") {
                 products = (await App.api("products.toggle", { id })).products;
                 renderProducts();

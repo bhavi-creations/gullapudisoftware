@@ -27,10 +27,19 @@ define('DEFAULT_ADMIN_PASSWORD', 'admin123');
 define('BACKUP_DIR', __DIR__ . '/../backups');
 define('UPLOAD_DIR', __DIR__ . '/../uploads');
 
-/* Company details printed on invoices (invoice-print.php). Leave '' to hide a line. */
-define('COMPANY_ADDRESS', '');
-define('COMPANY_PHONE', '+91 96424 34343');
+/* Company details printed on invoices and quotations (includes/doc-print.php).
+   Taken from your sample tax invoice - change any line here. Leave '' to hide it. */
+define('COMPANY_NAME', 'Gullapudi Glass & Plywood');
+define('COMPANY_PROP', 'Gullapudi Glass & Plywood');
+define('COMPANY_ADDRESS', 'Gullapudi');
+define('COMPANY_PHONE', '9642434343');
 define('COMPANY_EMAIL', '');
-define('COMPANY_GSTIN', '');
-define('COMPANY_STATE', 'Andhra Pradesh (37)');
-define('COMPANY_BANK', '');   // e.g. 'SBI, A/c 1234567890, IFSC SBIN0001234'
+define('COMPANY_GSTIN', '37AFBPG9432L2Z7');
+define('COMPANY_STATE', 'Andhra Pradesh');
+define('COMPANY_STATE_CODE', 'IN-AP');
+
+/* Bank details (bottom-right of the invoice) */
+define('COMPANY_BANK_HOLDER', 'Gullapudi Glass & Plywood');
+define('COMPANY_BANK_NAME', 'UNION BANK OF INDIA');
+define('COMPANY_BANK_ACCOUNT', '033110100001118');
+define('COMPANY_BANK_BRANCH_IFSC', 'TILAK STREET, KAKINADA & UBIN0803031');

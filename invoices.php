@@ -886,6 +886,14 @@ include 'header.php';
                                 <i class="bi bi-printer-fill"></i>
                             </a>
 
+                            <a class="inv-action"
+                               href="invoice-print.php?id=${invoice.id}&download=1"
+                               target="_blank"
+                               rel="noopener"
+                               title="Download PDF">
+                                <i class="bi bi-download"></i>
+                            </a>
+
                             <button type="button"
                                     class="inv-action"
                                     data-action="edit"
@@ -973,51 +981,58 @@ include 'header.php';
 
         if (!invoice) return;
 
-        const details = [
-            ["Invoice Number", invoice.invoice_number],
-            ["Customer", invoice.customer],
-            ["Date", formatDate(invoice.date)],
-            ["Due Date", formatDate(invoice.due_date)],
-            ["Order", invoice.order_number || "-"],
-            ["Taxable (after discount)", formatAmount((invoice.subtotal || 0) - (invoice.discount || 0))],
-            ["GST", formatAmount(invoice.tax || 0)],
-            ["Amount", formatAmount(invoice.amount)],
-            ["Paid", formatAmount(invoice.paid || 0)],
-            ["Balance", formatAmount(Math.max(0, invoice.amount - (invoice.paid || 0)))],
-            ["Status", invoice.status]
-        ];
+        const paid = invoice.paid || 0;
+        const balance = Math.max(0, invoice.amount - paid);
+        const tones = { Paid: "green", "Partially Paid": "orange", Overdue: "red", Cancelled: "grey", Draft: "grey", Submitted: "blue" };
 
-        $("viewInvoiceContent").innerHTML =
-            details.map(([label, value]) => `
-                <div class="row py-3 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `).join("");
+        const body = App.details({
+            title: "Invoice Details",
+            icon: "receipt",
+            name: invoice.invoice_number,
+            subtitle: invoice.customer || "",
+            badge: { text: invoice.status, tone: tones[invoice.status] || "blue" },
+            rows: [
+                ["Customer", invoice.customer],
+                ["Invoice Date", formatDate(invoice.date)],
+                ["Due Date", formatDate(invoice.due_date)],
+                ["Order", invoice.order_number || "-"],
+                ["Taxable Value", formatAmount((invoice.subtotal || 0) - (invoice.discount || 0))],
+                ["GST", formatAmount(invoice.tax || 0)],
+                ["Invoice Amount", formatAmount(invoice.amount)],
+                ["Paid", formatAmount(paid)],
+                ["Balance", formatAmount(balance)]
+            ],
+            html: '<div class="details-items text-muted">Loading items...</div>',
+            actions: [
+                { label: "Download PDF", icon: "download", tone: "neutral", href: "invoice-print.php?download=1&id=" + invoice.id, newTab: true },
+                { label: "Print Invoice", icon: "printer-fill", tone: "neutral", href: "invoice-print.php?id=" + invoice.id, newTab: true },
+                { label: "Edit Invoice", icon: "pencil-fill", tone: "primary", onClick: () => editInvoice(id) },
+                { label: "Delete Invoice", icon: "trash3", tone: "danger", onClick: () => rowAction("delete", id) }
+            ]
+        });
 
         // Product lines from the linked order.
         App.post(window.location.pathname, { action: "items", id: invoice.id })
             .then(result => {
-                if (!result.items.length) return;
-                const holder = document.createElement("div");
-                holder.className = "table-responsive mt-3";
-                holder.innerHTML = `
-                    <table class="table table-sm table-bordered mb-0">
-                        <thead><tr><th>Product</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Tax%</th><th class="text-end">Amount</th></tr></thead>
+                const box = body.querySelector(".details-items");
+                if (!box) return;
+                box.classList.remove("text-muted");
+                box.innerHTML = result.items.length ? `
+                    <table>
+                        <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Amount</th></tr></thead>
                         <tbody>${result.items.map(it => `<tr>
-                            <td>${escapeHTML(it.name)}</td><td>${escapeHTML(it.hsn || "-")}</td>
-                            <td>${it.quantity}</td><td>${formatAmount(it.rate)}</td><td>${it.tax}</td>
+                            <td>${escapeHTML(it.name)}</td>
+                            <td class="text-end">${it.quantity}</td>
                             <td class="text-end">${formatAmount(it.amount)}</td></tr>`).join("")}</tbody>
-                    </table>`;
-                $("viewInvoiceContent").appendChild(holder);
+                    </table>` : "No item lines.";
             })
             .catch(() => {});
+    }
 
-        viewModal.show();
+    // Run a table row action (same confirm + logic as the row buttons).
+    function rowAction(action, id) {
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+        if (btn) btn.click();
     }
 
     /* EDIT INVOICE */

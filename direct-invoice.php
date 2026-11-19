@@ -144,6 +144,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $region = ($payload['region'] ?? '') === 'Outside AP' ? 'Outside AP' : 'Inside AP';
     $reference = mb_substr(trim((string)($payload['reference'] ?? '')), 0, 150);
     $notes = mb_substr((string)($payload['notes'] ?? ''), 0, 5000);
+    $dispatch = [
+        'eway_bill' => mb_substr(trim((string)($payload['eway_bill'] ?? '')), 0, 50) ?: null,
+        'vehicle_no' => mb_substr(trim((string)($payload['vehicle_no'] ?? '')), 0, 50) ?: null,
+        'dispatched_through' => mb_substr(trim((string)($payload['dispatched_through'] ?? '')), 0, 150) ?: null,
+    ];
 
     $pdo = db();
     $pdo->beginTransaction();
@@ -191,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'tax' => round($taxTotal, 2),
             'amount' => $total,
             'status' => 'Submitted',
-        ]);
+        ] + $dispatch);
 
         db_update('orders', ['invoice_id' => $invoiceId], $orderId);
         $pdo->commit();
@@ -501,6 +506,18 @@ include 'header.php';
                                 <label class="di-label" for="diReference">Reference / PO No.</label>
                                 <input type="text" id="diReference" class="di-input" maxlength="150" placeholder="Optional">
                             </div>
+                            <div class="col-4">
+                                <label class="di-label" for="diEway">e-Way Bill No.</label>
+                                <input type="text" id="diEway" class="di-input" maxlength="50" placeholder="Optional">
+                            </div>
+                            <div class="col-4">
+                                <label class="di-label" for="diVehicle">Vehicle No.</label>
+                                <input type="text" id="diVehicle" class="di-input" maxlength="50" placeholder="Optional">
+                            </div>
+                            <div class="col-4">
+                                <label class="di-label" for="diDispatch">Dispatched through</label>
+                                <input type="text" id="diDispatch" class="di-input" maxlength="150" placeholder="e.g. Transport name">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -762,6 +779,9 @@ include 'header.php';
                     due_date: $("diDue").value,
                     region: $("diRegion").value,
                     reference: $("diReference").value,
+                    eway_bill: $("diEway").value,
+                    vehicle_no: $("diVehicle").value,
+                    dispatched_through: $("diDispatch").value,
                     notes: $("diNotes").value,
                     round_off: $("diRound").checked,
                     print: print,

@@ -168,7 +168,7 @@ include 'header.php';
           <i class="bi bi-cash-stack"></i>
         </div>
         <div>
-          <div class="stat-label">Total Sales (<?php echo $selected === date('Y-m-d') ? 'Today' : e($selDate->format('d M')); ?>)</div>
+          <div class="stat-label">Sales (<?php echo $selected === date('Y-m-d') ? 'Today' : e($selDate->format('d M')); ?>)</div>
           <div class="stat-value"><?php echo rs($salesToday); ?></div>
           <p class="stat-change<?php echo $salesToday < $salesYesterday ? ' down' : ''; ?>"><?php echo pctChange($salesToday, $salesYesterday); ?> vs Previous Day</p>
         </div>
@@ -181,7 +181,7 @@ include 'header.php';
           <i class="bi bi-graph-up-arrow"></i>
         </div>
         <div>
-          <div class="stat-label">Total Sales (This Month)</div>
+          <div class="stat-label">Sales (This Month)</div>
           <div class="stat-value"><?php echo rs($salesMonth); ?></div>
           <p class="stat-change<?php echo $isDown ? ' down' : ''; ?>"><?php echo $monthChange; ?> vs Last Month</p>
         </div>
@@ -207,7 +207,7 @@ include 'header.php';
           <i class="bi bi-box-seam"></i>
         </div>
         <div>
-          <div class="stat-label">Total Stock Value</div>
+          <div class="stat-label">Stock Value</div>
           <div class="stat-value"><?php echo rs($stockValue); ?></div>
           <p class="stat-change"><?php echo $totalProducts; ?> products</p>
         </div>

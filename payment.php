@@ -1174,35 +1174,37 @@ include 'header.php';
 
         if (!payment) return;
 
-        const fields = [
-            ["Payment ID", payment.narration],
-            ["Date", formatDate(payment.date)],
-            ["Type", payment.type],
-            ["Invoice", payment.invoice],
-            ["Customer", payment.customer],
-            ["Payment Mode", payment.mode],
-            ["Amount", formatMoney(payment.amount)],
-            ["Reference", payment.reference || "-"],
-            ["Settlement", getSettlementStatus(payment)],
-            ["Invoice Balance", formatMoney(
-                getInvoiceBalance(payment.invoice)
-            )]
-        ];
+        const settlement = getSettlementStatus(payment);
+        const tone = /paid|settled/i.test(settlement) && !/partial/i.test(settlement)
+            ? "green" : /partial/i.test(settlement) ? "orange" : /overdue/i.test(settlement) ? "red" : "blue";
 
-        $("viewPaymentContent").innerHTML = fields.map(
-            ([label, value]) => `
-                <div class="row py-2 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `
-        ).join("");
+        App.details({
+            title: "Payment Details",
+            icon: "credit-card",
+            name: formatMoney(payment.amount),
+            subtitle: payment.customer || "",
+            badge: { text: settlement, tone: tone },
+            rows: [
+                ["Payment ID", payment.narration],
+                ["Date", formatDate(payment.date)],
+                ["Type", payment.type],
+                ["Invoice", payment.invoice],
+                ["Customer", payment.customer],
+                ["Payment Mode", payment.mode],
+                ["Amount", formatMoney(payment.amount)],
+                ["Reference", payment.reference || "-"],
+                ["Invoice Balance", formatMoney(getInvoiceBalance(payment.invoice))]
+            ],
+            actions: [
+                { label: "Copy Reference", icon: "clipboard", tone: "primary", onClick: () => rowAction("copy", id) }
+            ]
+        });
+    }
 
-        viewModal.show();
+    // Run a table row action (same confirm + logic as the row buttons).
+    function rowAction(action, id) {
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+        if (btn) btn.click();
     }
 
     /* NOTIFICATION */

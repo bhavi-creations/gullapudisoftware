@@ -692,30 +692,39 @@
         const c = categories.find(c => c.id === id);
         if (!c) return;
 
-        const fields = [
-            ["Category Name", c.name],
-            ["Code", c.code || "-"],
-            ["Sort ID", c.sort],
-            ["Status", c.enabled ? "Active" : "Inactive"],
-            ["Enabled", c.enabled ? "Yes" : "No"],
-            ["Featured", c.featured ? "Yes" : "No"],
-            ["Category Image", c.hasImage ? "Available" : "Not Available"]
-        ];
+        const parent = c.parentId ? categories.find(p => p.id === c.parentId) : null;
 
-        $("viewCategoryContent").innerHTML = fields.map(
-            ([label, value]) => `
-                <div class="row py-2 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `
-        ).join("");
+        App.details({
+            title: "Category Details",
+            icon: "folder2-open",
+            image: c.imageUrl || "",
+            name: c.name,
+            subtitle: c.code || c.name,
+            badge: c.enabled ? { text: "Enabled", tone: "green" } : { text: "Disabled", tone: "red" },
+            rows: [
+                ["Category Name", c.name],
+                ["Parent Category", parent ? parent.name : "None"],
+                ["Code", c.code || "None"],
+                ["Sort ID", c.sort],
+                ["Featured", c.featured ? "Yes" : "No"],
+                ["Enabled", c.enabled ? "Yes" : "No"]
+            ],
+            actions: [
+                { label: "Edit Category", icon: "pencil-fill", tone: "primary", onClick: () => editCategory(id) },
+                { label: "Delete Category", icon: "trash3", tone: "danger", onClick: () => deleteCategory(id) }
+            ]
+        });
+    }
 
-        viewModal.show();
+    async function deleteCategory(id) {
+        if (!confirm("Are you sure you want to delete this category?")) return;
+        try {
+            categories = (await App.api("categories.delete", { id })).categories;
+            renderCategories();
+            App.toast("Category deleted.");
+        } catch (error) {
+            App.toast(error.message, "error");
+        }
     }
 
     // Edit category

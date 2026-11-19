@@ -973,29 +973,34 @@ include 'header.php';
 
         if (!employee) return;
 
-        const fields = [
-            ["Full Name", employee.name],
-            ["Username", employee.username],
-            ["Email", employee.email],
-            ["Mobile", employee.mobile || "-"],
-            ["Date of Birth", formatDate(employee.dob)],
-            ["Status", employee.enabled ? "Enabled" : "Disabled"]
-        ];
+        App.details({
+            title: "User Details",
+            icon: "person-circle",
+            name: employee.name,
+            subtitle: employee.username || "",
+            badge: employee.enabled ? { text: "Enabled", tone: "green" } : { text: "Disabled", tone: "red" },
+            rows: [
+                ["Full Name", employee.name],
+                ["Username", employee.username],
+                ["Email", employee.email],
+                ["Mobile", employee.mobile || "-"],
+                ["Date of Birth", formatDate(employee.dob)],
+                ["Role", employee.role ? employee.role.charAt(0).toUpperCase() + employee.role.slice(1) : "-"],
+                ["Enabled", employee.enabled ? "Yes" : "No"]
+            ],
+            actions: [
+                { label: "Edit User", icon: "pencil-fill", tone: "primary", onClick: () => editEmployee(id) },
+                employee.enabled
+                    ? { label: "Disable User", icon: "slash-circle", tone: "danger", onClick: () => rowAction("toggle", id) }
+                    : { label: "Enable User", icon: "check-circle", tone: "primary", onClick: () => rowAction("toggle", id) }
+            ]
+        });
+    }
 
-        $("employeeViewContent").innerHTML = fields.map(
-            ([label, value]) => `
-                <div class="row py-3 border-bottom">
-                    <div class="col-5 fw-bold">
-                        ${escapeHTML(label)}
-                    </div>
-                    <div class="col-7">
-                        ${escapeHTML(value)}
-                    </div>
-                </div>
-            `
-        ).join("");
-
-        viewModal.show();
+    // Run a table row action (same confirm + logic as the row buttons).
+    function rowAction(action, id) {
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+        if (btn) btn.click();
     }
 
     /* EDIT USER */

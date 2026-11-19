@@ -494,31 +494,46 @@
     const customer = customers.find(c => c.id === id);
     if (!customer) return;
 
-    const fields = [
-      ["Customer", customer.name],
-      ["Mobile", customer.mobile],
-      ["Email", customer.email],
-      ["Customer Code", customer.code],
-      ["Platform", customer.platform],
-      ["Store ID", customer.store],
-      ["Status", customer.status],
-      ["Newsletter", customer.newsletter]
-    ];
+    const active = customer.status === "active";
+    const address = (customer.addresses || [])
+      .map(a => (a.label ? a.label + ": " : "") + (a.address || ""))
+      .filter(Boolean)
+      .join(" | ");
 
-    $("viewCustomerDetails").innerHTML = fields.map(
-      ([label, value]) => `
-        <div class="row border-bottom py-2">
-          <div class="col-5 fw-semibold">
-            ${escapeHTML(label)}
-          </div>
-          <div class="col-7">
-            ${escapeHTML(value || "-")}
-          </div>
-        </div>
-      `
-    ).join("");
+    App.details({
+      title: "Customer Details",
+      icon: "person-fill",
+      name: customer.name,
+      subtitle: customer.mobile || customer.code || "",
+      badge: active ? { text: "Active", tone: "green" } : { text: "Inactive", tone: "red" },
+      rows: [
+        ["Customer Name", customer.name],
+        ["Account Type", customer.account_type],
+        ["Mobile", customer.mobile],
+        ["Email", customer.email],
+        ["GSTIN", customer.gstin],
+        ["Customer Code", customer.code],
+        ["Platform", customer.platform],
+        ["Store ID", customer.store],
+        ["Address", address],
+        ["Newsletter", customer.newsletter === "yes" ? "Yes" : "No"]
+      ],
+      actions: [
+        { label: "Edit Customer", icon: "pencil-fill", tone: "primary", onClick: () => editCustomer(id) },
+        { label: "Delete Customer", icon: "trash3", tone: "danger", onClick: () => deleteCustomer(id) }
+      ]
+    });
+  }
 
-    viewModal.show();
+  async function deleteCustomer(id) {
+    if (!confirm("Are you sure you want to delete this customer?")) return;
+    try {
+      customers = (await App.api("customers.delete", { id })).customers;
+      renderCustomers();
+      App.toast("Customer deleted.");
+    } catch (error) {
+      App.toast(error.message, "error");
+    }
   }
 
   if ($("addCustomerBtn")) {
@@ -565,15 +580,9 @@
     if (action === "view") viewCustomer(id);
     if (action === "edit") editCustomer(id);
 
-    try {
-      if (action === "delete") {
-        if (confirm("Are you sure you want to delete this customer?")) {
-          customers = (await App.api("customers.delete", { id })).customers;
-          renderCustomers();
-          App.toast("Customer deleted.");
-        }
-      }
+    if (action === "delete") deleteCustomer(id);
 
+    try {
       if (action === "toggle") {
         customers = (await App.api("customers.toggle", { id })).customers;
         renderCustomers();

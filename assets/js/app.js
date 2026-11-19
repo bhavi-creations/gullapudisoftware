@@ -79,7 +79,7 @@
         if (!holder) {
             holder = document.createElement("div");
             holder.id = "appToastHolder";
-            holder.className = "toast-container position-fixed top-0 end-0 p-3";
+            holder.className = "toast-container position-fixed bottom-0 end-0 p-3";
             holder.style.zIndex = 2000;
             document.body.appendChild(holder);
         }
@@ -96,7 +96,93 @@
         t.show();
     }
 
-    window.App = { api, post, upload, toast, csrf };
+    /*
+    | App.details({...}) -> right-side "details" panel used by every eye (view) icon.
+    |   title:    "Category Details"
+    |   icon:     bootstrap icon name, e.g. "folder2-open"
+    |   image:    optional image URL (shown instead of the icon)
+    |   name:     main heading            subtitle: small grey line
+    |   badge:    { text: "Enabled", tone: "green|red|orange|blue|grey" }
+    |   rows:     [["Label", "Value"], ...]   (values are escaped)
+    |   html:     optional extra HTML appended under the rows (caller escapes)
+    |   actions:  [{ label, icon, tone: "primary|danger|neutral", onClick, href }]
+    */
+    function esc(v) {
+        return String(v ?? "").replace(/[&<>"']/g, c =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    let detailsPanel = null;
+
+    function details(opts) {
+        if (!detailsPanel) {
+            const el = document.createElement("div");
+            el.className = "offcanvas offcanvas-end app-details";
+            el.tabIndex = -1;
+            el.id = "appDetailsPanel";
+            el.setAttribute("aria-labelledby", "appDetailsTitle");
+            el.innerHTML =
+                '<div class="app-details-head">' +
+                '<h5 class="app-details-title" id="appDetailsTitle"></h5>' +
+                '<button type="button" class="app-details-close" data-bs-dismiss="offcanvas" aria-label="Close">' +
+                '<i class="bi bi-x-lg"></i></button></div>' +
+                '<div class="app-details-body"></div>';
+            document.body.appendChild(el);
+            detailsPanel = { el, oc: new bootstrap.Offcanvas(el) };
+        }
+
+        const o = opts || {};
+        const tone = (o.badge && o.badge.tone) || "green";
+        const media = o.image
+            ? `<img src="${esc(o.image)}" alt="">`
+            : `<i class="bi bi-${esc(o.icon || "info-circle")}"></i>`;
+
+        const rows = (o.rows || []).map(([label, value]) => `
+            <div class="app-details-row">
+                <span>${esc(label)}</span>
+                <strong>${esc(value === null || value === undefined || value === "" ? "-" : value)}</strong>
+            </div>`).join("");
+
+        const actions = (o.actions || []).map((a, i) => {
+            const cls = "app-details-btn " + (a.tone || "primary");
+            const inner = (a.icon ? `<i class="bi bi-${esc(a.icon)}"></i>` : "") + esc(a.label);
+            return a.href
+                ? `<a class="${cls}" href="${esc(a.href)}"${a.newTab ? ' target="_blank" rel="noopener"' : ""}>${inner}</a>`
+                : `<button type="button" class="${cls}" data-i="${i}">${inner}</button>`;
+        }).join("");
+
+        detailsPanel.el.querySelector(".app-details-title").textContent = o.title || "Details";
+        const body = detailsPanel.el.querySelector(".app-details-body");
+        body.innerHTML = `
+            <div class="app-details-hero">
+                <div class="app-details-media">${media}</div>
+                <div class="app-details-hero-text">
+                    <div class="app-details-name">${esc(o.name || "")}</div>
+                    ${o.subtitle ? `<div class="app-details-sub">${esc(o.subtitle)}</div>` : ""}
+                    ${o.badge ? `<span class="app-details-badge ${esc(tone)}">${esc(o.badge.text)}</span>` : ""}
+                </div>
+            </div>
+            <div class="app-details-rows">${rows}</div>
+            ${o.html ? `<div class="app-details-extra">${o.html}</div>` : ""}
+            ${actions ? `<div class="app-details-actions">${actions}</div>` : ""}`;
+
+        body.querySelectorAll("button[data-i]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const a = o.actions[Number(btn.dataset.i)];
+                if (a.close !== false) detailsPanel.oc.hide();
+                if (a.onClick) a.onClick();
+            });
+        });
+
+        detailsPanel.oc.show();
+        return body;
+    }
+
+    function hideDetails() {
+        if (detailsPanel) detailsPanel.oc.hide();
+    }
+
+    window.App = { api, post, upload, toast, csrf, details, hideDetails, esc };
 
     // Show a toast after redirects like page.php?saved=1 / ?added=1
     document.addEventListener("DOMContentLoaded", function () {

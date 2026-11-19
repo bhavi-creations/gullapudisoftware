@@ -665,3 +665,146 @@ body {
 }
 .invioce-section .inv-add-btn:hover { background: #0868e6; color: #fff; }
 .invioce-section a.inv-action { text-decoration: none; }
+
+/* =====================================================
+   DETAILS PANEL (eye / view icon on every page)
+   Built by App.details() in assets/js/app.js
+===================================================== */
+.app-details.offcanvas {
+    --bs-offcanvas-width: 380px;
+    z-index: 1070;
+    border-left: 1px solid #e3e8f0;
+    border-radius: 14px 0 0 14px;
+    font-family: Arial, sans-serif;
+    color: #142238;
+}
+.app-details .app-details-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 20px 22px 6px;
+}
+.app-details .app-details-title { font-size: 17px; font-weight: 750; margin: 0; }
+.app-details .app-details-close {
+    border: 0;
+    background: transparent;
+    color: #5b6b82;
+    font-size: 18px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    line-height: 1;
+}
+.app-details .app-details-close:hover { background: #f1f5f9; color: #142238; }
+.app-details .app-details-body { padding: 14px 22px 24px; overflow-y: auto; }
+
+.app-details .app-details-hero { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
+.app-details .app-details-media {
+    width: 54px; height: 54px; flex: 0 0 54px;
+    border-radius: 10px;
+    background: #f1f3f6;
+    color: #7c8799;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+    overflow: hidden;
+}
+.app-details .app-details-media img { width: 100%; height: 100%; object-fit: cover; }
+.app-details .app-details-hero-text { min-width: 0; }
+.app-details .app-details-name {
+    font-size: 16px; font-weight: 750; line-height: 1.3;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+}
+.app-details .app-details-sub {
+    font-size: 12.5px; color: #64748b; font-weight: 600;
+    text-transform: uppercase; margin-top: 3px;
+    overflow-wrap: anywhere;
+}
+.app-details .app-details-badge {
+    display: inline-block;
+    margin-top: 7px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+}
+.app-details .app-details-badge.green  { background: #e7f8ee; color: #15995f; }
+.app-details .app-details-badge.red    { background: #fee2e2; color: #c62828; }
+.app-details .app-details-badge.orange { background: #fff1de; color: #c2610c; }
+.app-details .app-details-badge.blue   { background: #e5efff; color: #1d5fd1; }
+.app-details .app-details-badge.grey   { background: #eef1f5; color: #546176; }
+
+.app-details .app-details-rows {
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #e6ebf2;
+}
+.app-details .app-details-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 7px 0;
+    font-size: 14px;
+}
+.app-details .app-details-row span { color: #64748b; flex-shrink: 0; }
+.app-details .app-details-row strong {
+    color: #1f2d43;
+    font-weight: 700;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.app-details .app-details-extra { margin-bottom: 14px; font-size: 13px; }
+.app-details .app-details-extra table { width: 100%; font-size: 12.5px; }
+.app-details .app-details-extra th { color: #64748b; font-weight: 700; padding: 6px 4px; border-bottom: 1px solid #e6ebf2; }
+.app-details .app-details-extra td { padding: 6px 4px; border-bottom: 1px dashed #eef1f5; }
+
+.app-details .app-details-actions { display: grid; gap: 10px; }
+.app-details .app-details-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-decoration: none;
+    background: #fff;
+    cursor: pointer;
+}
+.app-details .app-details-btn.primary { border: 1px solid #93bdf7; color: #1a73e8; }
+.app-details .app-details-btn.primary:hover { background: #eef5ff; }
+.app-details .app-details-btn.danger { border: 1px solid #f3b4b4; color: #e5484d; background: #fff8f8; }
+.app-details .app-details-btn.danger:hover { background: #ffeded; }
+.app-details .app-details-btn.neutral { border: 1px solid #dfe5ee; color: #33465e; }
+.app-details .app-details-btn.neutral:hover { background: #f5f7fa; }
+
+@media (max-width: 480px) {
+    .app-details.offcanvas { --bs-offcanvas-width: 100%; border-radius: 0; }
+}
+
+/* Taxes: row actions */
+.taxes-sectionn .tax-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+}
+.taxes-sectionn .tax-action {
+    border: 0;
+    background: transparent;
+    padding: 3px;
+    color: #287dff;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+.taxes-sectionn .tax-action:hover { color: #0b5ed7; }
+.taxes-sectionn .tax-action.delete { color: #f0444c; }
+.taxes-sectionn .tax-action.delete:hover { color: #b91c1c; }
+
+/* Quotations: link-style row actions (print / download) */
+.quotation-section a.qt-action-btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }

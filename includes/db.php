@@ -260,6 +260,9 @@ function db_schema(): array
     tax DECIMAL(14,2) NOT NULL DEFAULT 0,
     amount DECIMAL(14,2) NOT NULL DEFAULT 0,
     status VARCHAR(30) NOT NULL DEFAULT 'Submitted',
+    eway_bill VARCHAR(50) NULL,
+    vehicle_no VARCHAR(50) NULL,
+    dispatched_through VARCHAR(150) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX (date)
@@ -331,7 +334,7 @@ function db_schema(): array
     ];
 }
 
-const DB_SCHEMA_VERSION = '1';
+const DB_SCHEMA_VERSION = '2';
 
 function db_install(PDO $pdo): void
 {
@@ -346,6 +349,24 @@ function db_install(PDO $pdo): void
 
     foreach (db_schema() as $sql) {
         $pdo->exec($sql);
+    }
+
+    // Upgrades for databases created by an older version (CREATE TABLE IF NOT EXISTS
+    // does not add new columns to an existing table).
+    $columnExists = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+    );
+    $newColumns = [
+        // v2: dispatch details printed on the tax invoice
+        ['invoices', 'eway_bill', 'VARCHAR(50) NULL'],
+        ['invoices', 'vehicle_no', 'VARCHAR(50) NULL'],
+        ['invoices', 'dispatched_through', 'VARCHAR(150) NULL'],
+    ];
+    foreach ($newColumns as [$table, $column, $definition]) {
+        $columnExists->execute([$table, $column]);
+        if (!(int)$columnExists->fetchColumn()) {
+            $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+        }
     }
 
     // Default administrator.
