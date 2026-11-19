@@ -203,7 +203,7 @@ include 'header.php';
     <div class="row g-4">
 
         <!-- TAXES TABLE -->
-        <div class="col-12 col-xl-8">
+        <div class="col-12">
 
             <div class="tax-panel tax-list-panel">
 
@@ -374,12 +374,6 @@ include 'header.php';
 
         </div>
 
-        <!-- RIGHT PANEL -->
-        <div class="col-xl-4 d-none d-xl-block">
-
-            <div class="tax-panel tax-side-panel"></div>
-
-        </div>
 
     </div>
 

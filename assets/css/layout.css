@@ -115,7 +115,7 @@ body {
     }
 
     .sidebar-page-content h1 {
-        font-size: 26px !important;
+        font-size: 21px !important;
         line-height: 1.25;
         word-break: break-word;
     }
@@ -138,7 +138,7 @@ body {
 
 @media (max-width: 480px) {
     .sidebar-page-content h1 {
-        font-size: 23px !important;
+        font-size: 19px !important;
     }
 }
 
@@ -310,6 +310,358 @@ body {
 .app-badge.grey { background: #e2e8f0; color: #475569; }
 
 @media (max-width: 767px) {
-    .app-page .app-title { font-size: 26px; }
+    .app-page .app-title { font-size: 21px; }
     .app-page .app-card { padding: 16px; }
 }
+
+/* =====================================================
+   CONSISTENT LOOK ACROSS EVERY PAGE
+   One type scale + aligned stat cards, tables and forms.
+   Page stylesheets use the same class pattern on every
+   page (xx-title, xx-subtitle, xx-stat-card, xx-stat-label...),
+   so these rules target that pattern.
+===================================================== */
+.sidebar-page-content {
+    font-size: 14px;
+}
+
+/* Page title + subtitle */
+.sidebar-page-content > section h1 {
+    font-size: 24px !important;
+    font-weight: 750 !important;
+    line-height: 1.25 !important;
+    margin-bottom: 4px !important;
+}
+
+.sidebar-page-content > section h1 + p,
+.sidebar-page-content [class*="-subtitle"]:not(.sidebar-company-subtitle):not([class*="card-"]):not([class*="modal-"]):not([class*="status-"]):not([class*="check-"]) {
+    font-size: 14px !important;
+    line-height: 1.45;
+}
+
+/* Statistic cards (customers, products, invoices, payments, ...) */
+.sidebar-page-content [class*="-stat-card"],
+.sidebar-page-content .app-stat {
+    min-height: 100px !important;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px !important;
+    padding: 16px !important;
+}
+
+.sidebar-page-content [class*="-stat-card"] > div:last-child {
+    min-width: 0;
+    flex: 1;
+}
+
+.sidebar-page-content [class*="-stat-icon"] {
+    width: 46px !important;
+    height: 46px !important;
+    flex: 0 0 46px !important;
+    font-size: 20px !important;
+    border-radius: 12px !important;
+}
+
+.sidebar-page-content [class*="-stat-label"],
+.sidebar-page-content [class*="-stat-value"],
+.sidebar-page-content [class*="-stat-note"] {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-page-content [class*="-stat-label"] {
+    font-size: 13px !important;
+    margin-bottom: 2px !important;
+}
+
+.sidebar-page-content [class*="-stat-value"] {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+    margin: 2px 0 !important;
+}
+
+.sidebar-page-content [class*="-stat-note"] {
+    font-size: 12px !important;
+}
+
+/* Tables */
+.sidebar-page-content table th {
+    font-size: 12.5px !important;
+    vertical-align: middle;
+}
+
+.sidebar-page-content table td {
+    font-size: 13px !important;
+    vertical-align: middle;
+}
+
+.sidebar-page-content table th,
+.sidebar-page-content table td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+/* Form controls and buttons */
+.sidebar-page-content .form-control,
+.sidebar-page-content .form-select,
+.sidebar-page-content input[type="text"],
+.sidebar-page-content input[type="search"],
+.sidebar-page-content input[type="number"],
+.sidebar-page-content input[type="date"],
+.sidebar-page-content input[type="email"],
+.sidebar-page-content select,
+.sidebar-page-content textarea {
+    font-size: 14px !important;
+}
+
+.sidebar-page-content label,
+.sidebar-page-content .form-label {
+    font-size: 13px;
+}
+
+.sidebar-page-content .btn {
+    font-size: 13.5px;
+}
+
+/* Modals */
+.modal .modal-title {
+    font-size: 18px !important;
+}
+
+.modal .modal-body {
+    font-size: 14px;
+}
+
+/* Laptop widths: keep 4 stat cards in a row without wrapping text */
+@media (min-width: 1200px) and (max-width: 1500px) {
+    .sidebar-page-content [class*="-stat-card"] {
+        padding: 13px !important;
+        gap: 10px !important;
+    }
+    .sidebar-page-content [class*="-stat-icon"] {
+        width: 40px !important;
+        height: 40px !important;
+        flex-basis: 40px !important;
+        font-size: 18px !important;
+    }
+    .sidebar-page-content [class*="-stat-value"] {
+        font-size: 18px !important;
+    }
+}
+
+@media (max-width: 767px) {
+    .sidebar-page-content > section h1 {
+        font-size: 21px !important;
+    }
+    .sidebar-page-content > section h1 + p {
+        font-size: 13px !important;
+    }
+}
+
+/* ---------- List pages: tabs, toolbar, pagination ---------- */
+.sidebar-page-content > section {
+    padding: 22px 22px !important;
+}
+
+.sidebar-page-content button[class*="-tab"] {
+    font-size: 13.5px !important;
+    padding: 13px 14px !important;
+    border-bottom-width: 3px !important;
+}
+
+.sidebar-page-content [class*="-add-btn"] {
+    font-size: 14px !important;
+    padding: 10px 16px !important;
+    border-radius: 9px !important;
+    gap: 8px !important;
+    white-space: nowrap;
+}
+
+.sidebar-page-content [class*="-toolbar"] {
+    gap: 10px !important;
+    padding: 12px 14px !important;
+}
+
+.sidebar-page-content [class$="-search"],
+.sidebar-page-content [class*="-search-box"] {
+    min-height: 40px !important;
+    height: 40px !important;
+    border-radius: 9px !important;
+}
+
+.sidebar-page-content [class$="-search"] input,
+.sidebar-page-content [class*="-search-input"],
+.sidebar-page-content [class*="-search-box"] input {
+    font-size: 14px !important;
+}
+
+.sidebar-page-content [class*="-tool-btn"] {
+    height: 40px !important;
+    min-width: 40px !important;
+    font-size: 13.5px !important;
+    padding: 0 14px !important;
+    border-radius: 9px !important;
+}
+
+.sidebar-page-content [class*="-footer"]:not(.modal-footer) {
+    font-size: 13px !important;
+}
+
+.sidebar-page-content [class*="-page-btn"] {
+    height: 32px !important;
+    min-width: 32px !important;
+    font-size: 13px !important;
+    border-radius: 7px !important;
+}
+
+.sidebar-page-content [class*="-page-size"],
+.sidebar-page-content [class*="-page-select"] {
+    height: 34px !important;
+    min-width: 110px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+}
+
+@media (max-width: 767px) {
+    .sidebar-page-content > section {
+        padding: 16px 12px !important;
+    }
+}
+
+.sidebar-page-content [class*="-tool-btn"],
+.sidebar-page-content [class*="-page-btn"],
+.sidebar-page-content [class*="-page-size"],
+.sidebar-page-content [class*="-page-select"],
+.sidebar-page-content [class*="-add-btn"] {
+    min-height: 0 !important;
+    line-height: 1.2;
+}
+
+.sidebar-page-content [class$="-search"] > i,
+.sidebar-page-content [class*="-search-box"] > i {
+    display: flex !important;
+    align-items: center;
+    height: 100% !important;
+    line-height: 1 !important;
+    font-size: 15px !important;
+}
+
+.sidebar-page-content [class*="-toolbar"] {
+    align-items: center !important;
+}
+
+/* Same row height in every list table */
+.sidebar-page-content table:not([class*="aq-"]):not([class*="di-"]) > thead > tr > th,
+.sidebar-page-content table:not([class*="aq-"]):not([class*="di-"]) > tbody > tr > td {
+    padding: 11px 14px !important;
+}
+
+/* Taxes: search box width follows the full-width list */
+.taxes-sectionn .tax-search {
+    flex: 1;
+    width: auto !important;
+}
+
+/* Page header buttons (Export / Refresh / Clear ...) */
+.sidebar-page-content [class*="-export-btn"],
+.sidebar-page-content [class*="-refresh-btn"],
+.sidebar-page-content [class*="-clear-btn"],
+.sidebar-page-content [class*="-outline-btn"] {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 10px 16px !important;
+    font-size: 14px !important;
+    border-radius: 9px !important;
+    gap: 8px !important;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+/* ---------- Tally export header ---------- */
+.tally-section .tally-header { margin-bottom: 18px !important; }
+.tally-section .tally-filters { gap: 10px !important; align-items: flex-end !important; }
+.tally-section .tally-filter-group { min-width: 160px !important; }
+.tally-section .tally-filter-label { font-size: 13px !important; margin-bottom: 6px !important; }
+.tally-section .tally-date-input { height: 40px !important; font-size: 14px !important; border-radius: 9px !important; }
+.tally-section .tally-load-btn,
+.tally-section .tally-export-btn {
+    height: 40px !important;
+    padding: 0 16px !important;
+    font-size: 14px !important;
+    border-radius: 9px !important;
+}
+.tally-section .tally-summary { border-radius: 12px; padding: 12px 16px !important; }
+.tally-section .tally-summary-count { font-size: 15px !important; }
+.tally-section .tally-summary-description { font-size: 13px !important; }
+.tally-section .tally-empty { font-size: 14px !important; }
+
+/* ---------- Reports header filters ---------- */
+.report-section .rp-filter-input { height: 40px !important; }
+
+/* ---------- Add Product: tax lists in two columns ---------- */
+.add-product-section .ap-tax-container {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.add-product-section .ap-tax-container .ap-tax-heading {
+    grid-column: 1 / -1;
+    margin-bottom: 2px !important;
+}
+.add-product-section .ap-tax-item {
+    margin: 0 !important;
+    height: 100%;
+}
+@media (max-width: 575px) {
+    .add-product-section .ap-tax-container { grid-template-columns: 1fr; }
+}
+
+/* ---------- Backup & Restore ---------- */
+.backup-restore .br-create-card { min-height: 0 !important; }
+.backup-restore .br-create-card + .br-create-card { margin-top: 16px; }
+.backup-restore .br-summary-box {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    min-height: 0 !important;
+}
+.backup-restore .br-summary-box > div:last-child { min-width: 0; width: 100%; }
+.backup-restore .br-summary-label,
+.backup-restore .br-summary-note {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.backup-restore .br-summary-icon {
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important;
+    font-size: 18px !important;
+}
+.backup-restore .br-upload-circle {
+    width: 120px !important;
+    height: 120px !important;
+    flex: 0 0 120px !important;
+}
+.backup-restore .br-create-btn {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 10px 18px !important;
+    font-size: 14px !important;
+    border-radius: 9px !important;
+}
+
+/* Invoices page: Direct Invoice button */
+.invioce-section .inv-add-btn {
+    display: inline-flex;
+    align-items: center;
+    background: #1479ff;
+    border: 1px solid #1479ff;
+    color: #fff;
+    font-weight: 700;
+    text-decoration: none;
+}
+.invioce-section .inv-add-btn:hover { background: #0868e6; color: #fff; }
+.invioce-section a.inv-action { text-decoration: none; }

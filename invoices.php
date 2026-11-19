@@ -107,13 +107,18 @@ include 'header.php';
 <div class="container-fluid p-0">
 
     <!-- PAGE HEADER -->
-    <div class="row mb-3">
-        <div class="col-12">
+    <div class="row mb-3 align-items-center g-3">
+        <div class="col-md-8">
             <h1 class="inv-title">Invoices</h1>
 
             <p class="inv-subtitle">
                 Manage sales invoices for the product catalog
             </p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <a href="direct-invoice.php" class="inv-add-btn">
+                <i class="bi bi-plus-lg"></i> Direct Invoice
+            </a>
         </div>
     </div>
 
@@ -872,6 +877,14 @@ include 'header.php';
                                     title="View Invoice">
                                 <i class="bi bi-eye"></i>
                             </button>
+
+                            <a class="inv-action"
+                               href="invoice-print.php?id=${invoice.id}"
+                               target="_blank"
+                               rel="noopener"
+                               title="Print Invoice">
+                                <i class="bi bi-printer-fill"></i>
+                            </a>
 
                             <button type="button"
                                     class="inv-action"

@@ -293,7 +293,7 @@ include 'header.php';
 .add-quotation-section {
     background: #f6f8fd;
     min-height: 100vh;
-    padding: 28px;
+    padding: 22px;
     font-family: Arial, sans-serif;
     color: #142238;
 }
@@ -301,13 +301,13 @@ include 'header.php';
 /* HEADER */
 
 .add-quotation-section .aq-title {
-    font-size: 36px;
+    font-size: 26px;
     font-weight: 750;
     margin: 0 0 8px;
 }
 
 .add-quotation-section .aq-subtitle {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 600;
     color: #64748b;
     margin: 0;
@@ -321,9 +321,9 @@ include 'header.php';
     background: white;
     border: 1px solid #e1e7f0;
     border-radius: 13px;
-    padding: 17px 22px;
+    padding: 14px 18px;
     color: #293b55;
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 750;
     text-decoration: none;
     cursor: pointer;
@@ -352,9 +352,9 @@ include 'header.php';
 }
 
 .add-quotation-section .aq-info-item {
-    padding: 5px 25px;
+    padding: 5px 20px;
     border-right: 1px solid #e8edf4;
-    min-height: 75px;
+    min-height: 65px;
 }
 
 .add-quotation-section .aq-info-item:last-child {
@@ -369,7 +369,7 @@ include 'header.php';
 }
 
 .add-quotation-section .aq-info-value {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 750;
     color: #18283d;
 }
@@ -377,7 +377,7 @@ include 'header.php';
 .add-quotation-section .aq-info-value i {
     color: #7187a5;
     margin-right: 10px;
-    font-size: 20px;
+    font-size: 17px;
 }
 
 .add-quotation-section .aq-date-input {
@@ -385,7 +385,7 @@ include 'header.php';
     background: transparent;
     font-weight: 750;
     color: #18283d;
-    font-size: 17px;
+    font-size: 15px;
     width: 155px;
     outline: none;
 }
@@ -393,7 +393,7 @@ include 'header.php';
 .add-quotation-section .aq-info-select {
     border: none;
     background: transparent;
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 700;
     color: #18283d;
     outline: none;
@@ -403,12 +403,12 @@ include 'header.php';
 
 .add-quotation-section .aq-reference {
     width: 100%;
-    height: 55px;
+    height: 47px;
     border: 1px solid #e1e7f0;
     border-radius: 11px;
     background: #f9fafc;
-    padding: 12px 17px;
-    font-size: 17px;
+    padding: 12px 14px;
+    font-size: 15px;
     outline: none;
 }
 
@@ -419,12 +419,12 @@ include 'header.php';
 /* PRODUCT TOOLBAR */
 
 .add-quotation-section .aq-product-toolbar {
-    padding: 17px;
+    padding: 14px;
     border-bottom: 1px solid #e6eaf1;
 }
 
 .add-quotation-section .aq-customer-select {
-    height: 65px;
+    height: 56px;
     width: 100%;
     border: 1px solid #cde0ff;
     border-radius: 12px;
@@ -451,11 +451,11 @@ include 'header.php';
     background: transparent;
     font-weight: 750;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
 }
 
 .add-quotation-section .aq-product-search {
-    height: 63px;
+    height: 54px;
     display: flex;
     align-items: center;
     gap: 13px;
@@ -472,17 +472,17 @@ include 'header.php';
     border: none;
     outline: none;
     background: transparent;
-    font-size: 17px;
+    font-size: 15px;
 }
 
 .add-quotation-section .aq-region-select {
-    height: 63px;
+    height: 54px;
     width: 100%;
     border: 1px solid #e1e7f0;
     background: white;
     border-radius: 12px;
     padding: 0 15px;
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 650;
     color: #293b55;
 }
@@ -492,11 +492,11 @@ include 'header.php';
     border: 1px solid #1479ff;
     color: white;
     border-radius: 12px;
-    padding: 16px 19px;
-    font-size: 17px;
+    padding: 16px 15px;
+    font-size: 15px;
     font-weight: 750;
     width: 100%;
-    min-height: 63px;
+    min-height: 54px;
 }
 
 .add-quotation-section .aq-add-product-btn:hover {
@@ -508,10 +508,10 @@ include 'header.php';
     border: 1px solid #e1e7f0;
     border-radius: 12px;
     padding: 15px 14px;
-    min-height: 63px;
+    min-height: 54px;
     width: 100%;
     color: #293b55;
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 750;
 }
 
@@ -528,8 +528,8 @@ include 'header.php';
 }
 
 .add-quotation-section .aq-table thead th {
-    padding: 27px 15px;
-    font-size: 16px;
+    padding: 22px 15px;
+    font-size: 14px;
     font-weight: 750;
     color: #293b55;
     border-bottom: 1px solid #e8edf4;
@@ -548,9 +548,9 @@ include 'header.php';
 }
 
 .add-quotation-section .aq-table-input {
-    width: 90px;
+    width: 77px;
     max-width: 100%;
-    height: 42px;
+    height: 36px;
     border: 1px solid #dfe6ef;
     border-radius: 7px;
     padding: 7px;
@@ -565,7 +565,7 @@ include 'header.php';
 
 .add-quotation-section .aq-remove-btn {
     color: #f0444c;
-    font-size: 19px;
+    font-size: 16px;
     border: none;
     background: transparent;
 }
@@ -579,12 +579,12 @@ include 'header.php';
 /* NOTES */
 
 .add-quotation-section .aq-notes-card {
-    padding: 20px;
+    padding: 16px;
     margin-top: 35px;
 }
 
 .add-quotation-section .aq-section-title {
-    font-size: 19px;
+    font-size: 16px;
     font-weight: 750;
     margin-bottom: 15px;
 }
@@ -596,8 +596,8 @@ include 'header.php';
     border: 1px solid #e2e8f0;
     background: #fafbfe;
     border-radius: 12px;
-    padding: 18px;
-    font-size: 17px;
+    padding: 14px;
+    font-size: 15px;
     line-height: 1.5;
     color: #34445d;
     outline: none;
@@ -610,7 +610,7 @@ include 'header.php';
 /* TOTAL AND SAVE */
 
 .add-quotation-section .aq-summary {
-    padding: 23px;
+    padding: 18px;
     margin-top: 20px;
 }
 
@@ -619,12 +619,12 @@ include 'header.php';
     justify-content: space-between;
     gap: 15px;
     margin-bottom: 12px;
-    font-size: 16px;
+    font-size: 14px;
     color: #64748b;
 }
 
 .add-quotation-section .aq-summary-total {
-    font-size: 25px;
+    font-size: 20px;
     font-weight: 750;
     color: #152239;
     padding-top: 16px;
@@ -636,8 +636,8 @@ include 'header.php';
     color: white;
     border: none;
     border-radius: 10px;
-    padding: 15px 25px;
-    font-size: 17px;
+    padding: 15px 20px;
+    font-size: 15px;
     font-weight: 750;
 }
 
@@ -654,18 +654,45 @@ include 'header.php';
 
 .aq-modal .modal-header,
 .aq-modal .modal-footer {
-    padding: 20px 25px;
+    padding: 16px 20px;
 }
 
 .aq-modal .modal-body {
-    padding: 25px;
+    padding: 20px;
 }
+
+
+/* Compact + aligned (shared look) */
+.add-quotation-section .aq-header-btn { padding: 9px 14px; gap: 8px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-info-card { margin-top: 16px; margin-bottom: 16px; padding: 12px 0; }
+.add-quotation-section .aq-info-item { min-height: 0; height: 100%; padding: 4px 18px; display: flex; flex-direction: column; justify-content: flex-start; }
+.add-quotation-section .aq-info-label { font-size: 12.5px; margin-bottom: 6px; }
+.add-quotation-section .aq-date-input, .add-quotation-section .aq-info-select, .add-quotation-section .aq-info-value { font-size: 14px; }
+.add-quotation-section .aq-reference { height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 8px; }
+.add-quotation-section .aq-product-toolbar { padding: 12px 14px; }
+.add-quotation-section .aq-customer-select { height: 46px; padding: 6px 12px; border-radius: 10px; }
+.add-quotation-section .aq-customer-label { font-size: 11px; margin-bottom: 1px; }
+.add-quotation-section .aq-product-search,
+.add-quotation-section .aq-region-select { height: 46px; border-radius: 10px; font-size: 14px; }
+.add-quotation-section .aq-product-search input { font-size: 14px; }
+.add-quotation-section .aq-add-product-btn,
+.add-quotation-section .aq-details-btn { min-height: 46px; padding: 8px 12px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-table thead th { padding: 12px; font-size: 12.5px; }
+.add-quotation-section .aq-table tbody td { padding: 10px 12px; }
+.add-quotation-section .aq-notes-card { margin-top: 16px; }
+.add-quotation-section .aq-section-title { font-size: 15px; margin-bottom: 10px; }
+.add-quotation-section .aq-notes { min-height: 110px; font-size: 14px; border-radius: 10px; }
+.add-quotation-section .aq-summary { margin-top: 16px; }
+.add-quotation-section .aq-summary-row { font-size: 13.5px; margin-bottom: 9px; }
+.add-quotation-section .aq-summary-total { font-size: 18px; padding-top: 12px; }
+.add-quotation-section .aq-save-btn { padding: 10px 18px; font-size: 14px; border-radius: 9px; }
+.add-quotation-section .aq-cancel-btn { padding-top: 10px; padding-bottom: 10px; font-size: 14px; }
 
 /* RESPONSIVE */
 
 @media (max-width: 1199px) {
     .add-quotation-section .aq-info-item {
-        padding: 15px 18px;
+        padding: 15px 14px;
     }
 
     .add-quotation-section .aq-info-item:nth-child(2n) {
@@ -679,7 +706,7 @@ include 'header.php';
     }
 
     .add-quotation-section .aq-title {
-        font-size: 27px;
+        font-size: 22px;
     }
 
     .add-quotation-section .aq-subtitle {
@@ -756,7 +783,7 @@ include 'header.php';
     <!-- QUOTATION DETAILS TOP ROW -->
     <div class="aq-card aq-info-card">
 
-        <div class="row g-0 align-items-center">
+        <div class="row g-0 align-items-stretch">
 
             <!-- QUOTATION DATE -->
             <div class="col-md-6 col-xl">
@@ -1030,7 +1057,7 @@ include 'header.php';
     <!-- SUMMARY AND SAVE -->
     <div class="aq-card aq-summary">
 
-        <div class="row g-4 align-items-end">
+        <div class="row g-4 align-items-start">
 
             <div class="col-md-6">
                 <h3 class="aq-section-title mb-2">
@@ -1070,7 +1097,7 @@ include 'header.php';
             <div class="col-12 text-end">
 
                 <a href="<?php echo e($L["listUrl"]); ?>"
-                   class="btn btn-light border px-4 py-3 me-2">
+                   class="btn btn-light border px-4 me-2 aq-cancel-btn">
                     Cancel
                 </a>
 

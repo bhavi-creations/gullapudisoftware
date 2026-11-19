@@ -92,7 +92,7 @@ $topProducts = db_all(
 );
 
 /* Recent activities */
-$activities = db_all('SELECT user_name, module, action, created_at FROM activity_log WHERE module <> \'Auth\' ORDER BY id DESC LIMIT 6');
+$activities = db_all('SELECT user_name, module, action, created_at FROM activity_log WHERE module <> \'Auth\' ORDER BY id DESC LIMIT 5');
 
 /* Sales summary: week (Mon-Sun) of the selected date */
 $weekStart = $selDate->modify('monday this week');
@@ -136,7 +136,7 @@ include 'header.php';
 <div class="container-fluid">
 
   <!-- HEADER -->
-  <div class="row align-items-center mb-4 g-3">
+  <div class="row align-items-center mb-3 g-3">
     <div class="col-lg-8">
       <h1 class="dashboard-title">Dashboard</h1>
       <p class="dashboard-subtitle">
@@ -170,7 +170,7 @@ include 'header.php';
         <div>
           <div class="stat-label">Total Sales (<?php echo $selected === date('Y-m-d') ? 'Today' : e($selDate->format('d M')); ?>)</div>
           <div class="stat-value"><?php echo rs($salesToday); ?></div>
-          <p class="stat-change"><?php echo pctChange($salesToday, $salesYesterday); ?> vs Previous Day</p>
+          <p class="stat-change<?php echo $salesToday < $salesYesterday ? ' down' : ''; ?>"><?php echo pctChange($salesToday, $salesYesterday); ?> vs Previous Day</p>
         </div>
       </div>
     </div>
@@ -181,13 +181,9 @@ include 'header.php';
           <i class="bi bi-graph-up-arrow"></i>
         </div>
         <div>
-          <div class="stat-label">
-            Total Sales (This Month)
-          </div>
+          <div class="stat-label">Total Sales (This Month)</div>
           <div class="stat-value"><?php echo rs($salesMonth); ?></div>
-          <p class="stat-change">
-            <?php echo $monthChange; ?> vs Last Month
-          </p>
+          <p class="stat-change<?php echo $isDown ? ' down' : ''; ?>"><?php echo $monthChange; ?> vs Last Month</p>
         </div>
       </div>
     </div>
@@ -226,7 +222,7 @@ include 'header.php';
     <!-- Sales Overview -->
     <div class="col-12 col-xl-5">
       <div class="dashboard-card panel-card">
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="panel-head">
           <h2 class="panel-title">Sales Overview</h2>
           <a href="reports.php" class="panel-link">
             <?php echo e($selDate->format('M Y')); ?>
@@ -244,7 +240,7 @@ include 'header.php';
       <div class="dashboard-card panel-card"
            id="top-selling-products">
 
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="panel-head">
           <h2 class="panel-title">Top Selling Products</h2>
           <a href="reports.php"
              class="panel-link">View All</a>
@@ -258,9 +254,7 @@ include 'header.php';
         <div class="product-item">
           <div class="product-rank"><?php echo $i + 1; ?></div>
           <div>
-            <div class="product-name">
-              <?php echo e($p['name']); ?>
-            </div>
+            <div class="product-name" title="<?php echo e($p['name']); ?>"><?php echo e($p['name']); ?></div>
             <div class="product-qty">Qty: <?php echo e(rtrim(rtrim(number_format((float)$p['qty'], 2, '.', ''), '0'), '.')); ?></div>
           </div>
           <div class="product-price"><?php echo rs((float)$p['sales']); ?></div>
@@ -275,7 +269,7 @@ include 'header.php';
       <div class="dashboard-card panel-card"
            id="recent-activities">
 
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="panel-head">
           <h2 class="panel-title">Recent Activities</h2>
         </div>
 
@@ -286,12 +280,15 @@ include 'header.php';
         <?php endif; ?>
 
         <?php foreach ($activities as $a): ?>
-          <div class="py-2 border-bottom small">
-            <div class="fw-semibold"><?php echo e($a['action']); ?></div>
-            <div class="text-muted">
+          <div class="activity-item">
+            <span class="activity-dot"></span>
+            <div>
+            <div class="activity-action"><?php echo e($a['action']); ?></div>
+            <div class="activity-meta">
               <?php echo e($a['module']); ?> &middot;
               <?php echo e(date('d M, h:i a', strtotime($a['created_at']))); ?>
               <?php if ($a['user_name']): ?>&middot; <?php echo e($a['user_name']); ?><?php endif; ?>
+            </div>
             </div>
           </div>
         <?php endforeach; ?>
@@ -309,7 +306,7 @@ include 'header.php';
       <div class="dashboard-card summary-card"
            id="sales-summary">
 
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="panel-head">
           <h2 class="panel-title">Sales Summary</h2>
           <span class="panel-link">
             This Week
@@ -343,7 +340,7 @@ include 'header.php';
     <div class="col-12 col-xl-4">
       <div class="dashboard-card summary-card" id="stock-status">
 
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="panel-head">
           <h2 class="panel-title">Stock Status</h2>
           <a href="products.php" class="panel-link">
             View All
@@ -367,9 +364,7 @@ include 'header.php';
               <i class="bi bi-exclamation-triangle-fill"></i>
             </div>
             <div>
-              <div class="stock-label">
-                Low Stock Products
-              </div>
+              <div class="stock-label">Low Stock</div>
               <div class="stock-value"><?php echo $lowStock; ?></div>
             </div>
           </div>
@@ -403,10 +398,8 @@ include 'header.php';
       <div class="dashboard-card summary-card"
            id="top-customers">
 
-        <div class="d-flex justify-content-between align-items-center gap-2">
-          <h2 class="panel-title">
-            Top Customers (By Sales)
-          </h2>
+        <div class="panel-head">
+          <h2 class="panel-title">Top Customers</h2>
           <a href="customers.php" class="panel-link">
             View All
           </a>
@@ -422,7 +415,7 @@ include 'header.php';
             <i class="bi bi-person-fill"></i>
           </div>
 
-          <span><?php echo e($c['customer']); ?></span>
+          <span class="customer-name" title="<?php echo e($c['customer']); ?>"><?php echo e($c['customer']); ?></span>
 
           <strong class="customer-amount">
             <?php echo rs((float)$c['sales']); ?>
@@ -482,7 +475,7 @@ include 'header.php';
             You have <?php echo rs($pendingAmount); ?> pending from
             <?php echo $pendingCustomers; ?> customer(s).
           </p>
-          <a href="payment.php" class="panel-link d-inline-block mt-2">Record Payment -&gt;</a>
+          <a href="payment.php" class="panel-link">Record Payment -&gt;</a>
         </div>
 
       </div>
@@ -505,7 +498,7 @@ include 'header.php';
             <?php echo $lowStock + $outOfStock; ?> products are low or out of stock.
           </p>
           <a href="products.php"
-             class="panel-link d-inline-block mt-2">
+             class="panel-link">
             View Low Stock Products -&gt;
           </a>
         </div>

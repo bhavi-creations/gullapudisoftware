@@ -26,6 +26,7 @@ $sidebarMenus = [
     ['Quotations', 'file-earmark-text', 'quotation.php', ['quotation.php', 'add-quotation.php']],
     ['Orders', 'cart-check', 'orders.php', ['orders.php', 'add-order.php']],
     ['Invoices', 'receipt', 'invoices.php', ['invoices.php']],
+    ['Direct Invoice', 'receipt-cutoff', 'direct-invoice.php', ['direct-invoice.php']],
     ['Payments', 'credit-card', 'payment.php', ['payment.php']],
     ['Employees', 'person-circle', 'employees.php', ['employees.php', 'add-employees.php']],
     ['Reports', 'bar-chart-line', 'reports.php', ['reports.php']],
