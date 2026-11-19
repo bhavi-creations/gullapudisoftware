@@ -62,23 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $logo = '';
     }
     if (!empty($_FILES['logo']['name'])) {
-        $file = $_FILES['logo'];
-        $info = $file['error'] === UPLOAD_ERR_OK ? @getimagesize($file['tmp_name']) : false;
-        $types = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
-        if (!$info || !isset($types[$info[2]])) {
-            $errors[] = 'Logo must be a JPG, PNG or WEBP image.';
-        } elseif ($file['size'] > 2 * 1024 * 1024) {
-            $errors[] = 'Logo must be smaller than 2 MB.';
+        if ($logoError = logo_check($_FILES['logo'])) {
+            $errors[] = $logoError;
         } elseif (!$errors) {
-            $dir = UPLOAD_DIR . '/logos';
-            if (!is_dir($dir)) {
-                mkdir($dir, 0775, true);
-            }
-            $name = current_db_name() . '_' . bin2hex(random_bytes(6)) . '.' . $types[$info[2]];
-            if (move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) {
-                $logo = 'uploads/logos/' . $name;
-            } else {
-                $errors[] = 'Could not save the logo. Check folder permissions for /uploads.';
+            try {
+                $logo = logo_store($_FILES['logo'], current_db_name());
+            } catch (Throwable $e) {
+                $errors[] = $e->getMessage();
             }
         }
     }

@@ -156,6 +156,38 @@ function company_define(): void
 }
 
 /* ---------------------------------------------------------------
+ | BUSINESS LOGO (uploads/logos/<database>_<random>.<ext>)
+ --------------------------------------------------------------- */
+const LOGO_TYPES = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+
+/** Checks an uploaded logo ($_FILES entry). Returns an error message, or null when it is fine. */
+function logo_check(array $file): ?string
+{
+    $info = ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK ? @getimagesize($file['tmp_name']) : false;
+    if (!$info || !isset(LOGO_TYPES[$info[2]])) {
+        return 'Logo must be a JPG, PNG or WEBP image.';
+    }
+    if ($file['size'] > 2 * 1024 * 1024) {
+        return 'Logo must be smaller than 2 MB.';
+    }
+    return null;
+}
+
+/** Saves a checked logo for one business and returns its path (relative to the project). */
+function logo_store(array $file, string $dbName): string
+{
+    $dir = UPLOAD_DIR . '/logos';
+    if (!is_dir($dir)) {
+        mkdir($dir, 0775, true);
+    }
+    $name = $dbName . '_' . bin2hex(random_bytes(6)) . '.' . LOGO_TYPES[getimagesize($file['tmp_name'])[2]];
+    if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) {
+        throw new RuntimeException('Could not save the logo. Check folder permissions for /uploads.');
+    }
+    return 'uploads/logos/' . $name;
+}
+
+/* ---------------------------------------------------------------
  | LOGIN ACROSS BUSINESSES
  --------------------------------------------------------------- */
 

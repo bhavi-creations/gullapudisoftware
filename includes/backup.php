@@ -23,13 +23,17 @@ function backup_dir(): string
 }
 
 /** Creates a gzip-compressed SQL dump. Returns [file_name, size]. */
-function backup_create(): array
+function backup_create(?PDO $pdo = null, ?string $dir = null): array
 {
-    $pdo = db();
+    // Defaults: the logged-in business's database and backup folder.
+    $pdo = $pdo ?: db();
     $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 
     $name = 'gullapudi_backup_' . date('Y-m-d_His') . '.sql.gz';
-    $path = backup_dir() . '/' . $name;
+    if ($dir !== null && !is_dir($dir)) {
+        mkdir($dir, 0775, true);
+    }
+    $path = ($dir ?? backup_dir()) . '/' . $name;
     $gz = gzopen($path, 'wb6');
     if (!$gz) {
         throw new RuntimeException('Cannot write backup file. Check folder permissions for /backups.');

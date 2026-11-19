@@ -280,7 +280,8 @@ body {
     font-size: 14px;
 }
 
-.app-page .btn-app {
+.app-page .btn-app,
+.modal .btn-app {
     background: #087dff;
     color: #fff;
     font-weight: 700;
@@ -289,7 +290,8 @@ body {
     border: 0;
 }
 
-.app-page .btn-app:hover {
+.app-page .btn-app:hover,
+.modal .btn-app:hover {
     background: #0068d9;
     color: #fff;
 }
