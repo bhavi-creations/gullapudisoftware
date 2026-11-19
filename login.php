@@ -17,20 +17,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_valid()) {
         $error = 'Session expired. Please try again.';
     } else {
-        $user = db_one('SELECT * FROM users WHERE email = ? OR username = ? OR mobile = ? LIMIT 1', [$email, $email, $email]);
+        // Each business has its own database: find the one this login belongs to.
+        $found = $email !== '' && $password !== '' ? login_find($email, $password) : ['error' => 'Enter your username and password.'];
 
-        if (!$user || !password_verify($password, $user['password_hash'])) {
-            $error = 'Invalid username, mobile or password.';
-        } elseif (!(int)$user['enabled']) {
-            $error = 'Your account is disabled. Contact the administrator.';
+        if (isset($found['error'])) {
+            $error = $found['error'];
         } else {
+            $user = $found['user'];
+            $pdo = $found['pdo'];
             session_regenerate_id(true);
+            $_SESSION = ['csrf_token' => $_SESSION['csrf_token'] ?? null];
+            $_SESSION['tenant_db'] = $found['account']['db_name'];
             $_SESSION['user_id'] = (int)$user['id'];
             $_SESSION['user_name'] = $user['name'];
             $_SESSION['user_email'] = $user['email'];
             $_SESSION['user_role'] = $user['role'];
-            db_exec('UPDATE users SET last_login = NOW() WHERE id = ?', [$user['id']]);
-            log_activity('Auth', $user['name'] . ' logged in');
+            $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$user['id']]);
+            $pdo->prepare('INSERT INTO activity_log (user_name, module, action) VALUES (?, ?, ?)')
+                ->execute([$user['name'], 'Auth', $user['name'] . ' logged in']);
             header('Location: dashboard.php');
             exit;
         }

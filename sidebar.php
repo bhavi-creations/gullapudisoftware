@@ -33,8 +33,15 @@ $sidebarMenus = [
     ['Tally Export & GST', 'arrow-left-right', 'tally-export.php', ['tally-export.php']],
     ['WhatsApp Center', 'whatsapp', 'whatsapp-center.php', ['whatsapp-center.php']],
     ['Backup & Restore', 'cloud-arrow-up-fill', 'backup-restore.php', ['backup-restore.php']],
-    ['Returns & Damage', 'truck-front-fill', 'returns-damage.php', ['returns-damage.php']]
+    ['Returns & Damage', 'truck-front-fill', 'returns-damage.php', ['returns-damage.php']],
 ];
+if ((current_user()['role'] ?? '') === 'admin') {
+    $sidebarMenus[] = ['Business Settings', 'building-gear', 'business-settings.php', ['business-settings.php']];
+}
+// Only the main business's administrators can create / manage other businesses.
+if (is_super_admin()) {
+    $sidebarMenus[] = ['Business Accounts', 'buildings', 'business-accounts.php', ['business-accounts.php']];
+}
 
 function sbEscape($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
@@ -76,21 +83,15 @@ $sidebarInitials = $sidebarInitials ?: 'U';
 
         <a href="dashboard.php" class="text-decoration-none">
 
-            <?php if (is_file(__DIR__ . '/assets/images/gullapudi-logo.png')): ?>
-            <img
-                src="assets/images/gullapudi-logo.png"
-                alt="Gullapudi Logo"
-                class="sidebar-logo"
-            >
-            <?php endif; ?>
-
             <h2 class="sidebar-company-name">
-                GULLAPUDI
+                <?php echo sbEscape(COMPANY_SHORT); ?>
             </h2>
 
+            <?php if (COMPANY_TAGLINE !== ''): ?>
             <p class="sidebar-company-subtitle">
-                GLASS &amp; PLYWOOD CENTRE
+                <?php echo sbEscape(COMPANY_TAGLINE); ?>
             </p>
+            <?php endif; ?>
 
         </a>
 

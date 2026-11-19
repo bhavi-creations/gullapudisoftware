@@ -62,6 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (db_value('SELECT COUNT(*) FROM users WHERE email = ?', [$email])) {
         $errors[] = 'This email address already exists.';
+    } elseif ($taken = login_taken([$email, $mobile], current_db_name())) {
+        $errors[] = 'This email or mobile is already used to log in to another business. Use a different one.';
     }
 
     if (empty($errors)) {

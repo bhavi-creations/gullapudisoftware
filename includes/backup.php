@@ -8,6 +8,10 @@
 function backup_dir(): string
 {
     $dir = realpath(BACKUP_DIR) ?: BACKUP_DIR;
+    // Every other business keeps its backups in its own folder.
+    if (!is_main_business()) {
+        $dir = rtrim($dir, '/\\') . '/' . current_db_name();
+    }
     if (!is_dir($dir)) {
         mkdir($dir, 0775, true);
     }

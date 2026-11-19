@@ -89,6 +89,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (db_value('SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?', [$email, $id])) {
             employeeJson(['success' => false, 'message' => 'Email already exists.'], 409);
         }
+        if (login_taken([$email, $username, $mobile], current_db_name())) {
+            employeeJson(['success' => false, 'message' => 'This email, username or mobile is already used to log in to another business.'], 409);
+        }
 
         if ($isSelf && !$enabled) {
             employeeJson(['success' => false, 'message' => 'You cannot disable your own account.'], 422);

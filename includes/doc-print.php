@@ -126,7 +126,7 @@ function doc_render(array $doc): void
     $amount = (float)$doc['amount'];
     $roundOff = round($amount - round($lineTotal, 2), 2);
     $fileName = preg_replace('/[^A-Za-z0-9_-]+/', '-', $doc['file_name']);
-    $logo = is_file(__DIR__ . '/../assets/images/logo.jpg') ? 'assets/images/logo.jpg' : '';
+    $logo = COMPANY_LOGO;
     $autoDownload = !empty($_GET['download']);
     $billAddress = $customer['bill_address'] ?? '';
     $shipAddress = ($customer['ship_address'] ?? '') ?: $billAddress;
@@ -136,7 +136,7 @@ function doc_render(array $doc): void
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?php echo e($doc['title'] . ' ' . $doc['number']); ?> | Gullapudi</title>
+<title><?php echo e($doc['title'] . ' ' . $doc['number'] . ' | ' . COMPANY_SHORT); ?></title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>

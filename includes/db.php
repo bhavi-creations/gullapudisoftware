@@ -9,6 +9,49 @@ require_once __DIR__ . '/config.php';
 
 date_default_timezone_set(APP_TIMEZONE);
 
+/** Database of the business that is logged in (the main business when nobody is). */
+function current_db_name(): string
+{
+    $name = $_SESSION['tenant_db'] ?? '';
+    if (is_string($name) && $name !== '' && preg_match('/^' . preg_quote(TENANT_DB_PREFIX, '/') . '[0-9]+$/', $name)) {
+        return $name;
+    }
+    return DB_NAME;
+}
+
+function is_main_business(): bool
+{
+    return current_db_name() === DB_NAME;
+}
+
+/** Opens a PDO connection to one database; creates it first when $create is true. */
+function db_connect(string $name, bool $create = false): PDO
+{
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+    $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
+
+    try {
+        $pdo = new PDO($dsn . ';dbname=' . $name, DB_USER, DB_PASS, $options);
+    } catch (PDOException $e) {
+        // 1049 = unknown database -> create it (only when allowed).
+        $unknown = (int)($e->errorInfo[1] ?? 0) === 1049 || strpos($e->getMessage(), '1049') !== false;
+        if (!$create || !$unknown) {
+            throw $e;
+        }
+        $server = new PDO($dsn, DB_USER, DB_PASS, $options);
+        $server->exec('CREATE DATABASE IF NOT EXISTS `' . $name . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+        $pdo = new PDO($dsn . ';dbname=' . $name, DB_USER, DB_PASS, $options);
+    }
+
+    $pdo->exec("SET time_zone = '+05:30'");
+    return $pdo;
+}
+
+/** Connection to the logged-in business's own database (schema installed automatically). */
 function db(): PDO
 {
     static $pdo = null;
@@ -16,38 +59,13 @@ function db(): PDO
         return $pdo;
     }
 
-    $options = [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES   => false,
-    ];
-
     try {
-        $pdo = new PDO(
-            'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-            DB_USER, DB_PASS, $options
-        );
+        // Only the main database is created on the fly; business databases are
+        // created when the account is added (Business Accounts page).
+        $pdo = db_connect(current_db_name(), is_main_business());
     } catch (PDOException $e) {
-        // 1049 = unknown database -> create it.
-        if ((int)$e->errorInfo[1] !== 1049 && strpos($e->getMessage(), '1049') === false) {
-            db_fatal($e);
-        }
-        try {
-            $server = new PDO(
-                'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4',
-                DB_USER, DB_PASS, $options
-            );
-            $server->exec('CREATE DATABASE IF NOT EXISTS `' . DB_NAME . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
-            $pdo = new PDO(
-                'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-                DB_USER, DB_PASS, $options
-            );
-        } catch (PDOException $e2) {
-            db_fatal($e2);
-        }
+        db_fatal($e);
     }
-
-    $pdo->exec("SET time_zone = '+05:30'");
     db_install($pdo);
 
     return $pdo;

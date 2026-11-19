@@ -7,7 +7,7 @@
 require_once __DIR__ . '/includes/init.php';
 
 $stores = [
-    'Gullapudi Godown',
+    APP_STORE . ' Godown',
     'Main Store',
     'Warehouse'
 ];

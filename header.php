@@ -8,7 +8,7 @@ $pageTitle = $pageTitle ?? 'Admin Dashboard';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
-<title><?php echo e($pageTitle); ?> | Gullapudi</title>
+<title><?php echo e($pageTitle . ' | ' . COMPANY_SHORT); ?></title>
 
 <!-- Bootstrap 5 -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">

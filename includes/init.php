@@ -16,8 +16,9 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/tenant.php';
 
-db(); // connect + install schema
+db(); // connect to the logged-in business's database + install schema
 
 function e($value): string
 {
@@ -77,6 +78,11 @@ function json_flags(): int
 /* ---------- Authentication guard ---------- */
 if (empty($publicPage)) {
     $user = current_user();
+    // A business that has been disabled from Business Accounts is logged out everywhere.
+    $account = current_account();
+    if (!$account || $account['status'] !== 'active') {
+        $user = null;
+    }
     if (!$user || !(int)$user['enabled']) {
         $_SESSION = [];
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' || !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
@@ -89,4 +95,5 @@ if (empty($publicPage)) {
     $_SESSION['user_email'] = $user['email'];
 }
 
+company_define();
 csrf_token();

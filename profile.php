@@ -29,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (db_value('SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?', [$email, $user['id']])) {
         $errors[] = 'This email is used by another user.';
+    } elseif (login_taken([$email, $mobile], current_db_name())) {
+        $errors[] = 'This email or mobile is already used to log in to another business.';
     }
 
     if (!$errors) {

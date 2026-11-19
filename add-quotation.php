@@ -445,7 +445,7 @@ include 'header.php';
 
                     <div class="aq-info-value">
                         <i class="bi bi-building"></i>
-                        Gullapudi
+                        <?php echo e(APP_STORE); ?>
                     </div>
 
                 </div>
@@ -1139,7 +1139,7 @@ include 'header.php';
                 ["Quotation Date", $("quotationDate").value],
                 ["Valid Upto", $("validUpto").value],
                 ["Salesman", $("salesman").value],
-                ["Store", "Gullapudi"],
+                ["Store", <?php echo json_encode(APP_STORE, json_flags()); ?>],
                 ["Region", $("quotationRegion").value],
                 ["Total Products", quotationItems.length],
                 ["Subtotal", formatMoney(totals.subtotal)],
@@ -1212,7 +1212,7 @@ include 'header.php';
             `${i + 1}. ${item.name} - ${item.quantity} x ${formatMoney(item.rate)} = ${formatMoney(item.amount)}`
         );
         const text = [
-            `*Gullapudi Glass & Plywood - <?php echo e($L["waTitle"]); ?>*`,
+            `*${<?php echo json_encode(COMPANY_NAME, json_flags()); ?>} - <?php echo e($L["waTitle"]); ?>*`,
             name ? `Customer: ${name}` : null,
             `Date: ${$("quotationDate").value}`,
             "",
@@ -1282,7 +1282,7 @@ include 'header.php';
             valid_upto: validUpto,
             salesman: $("salesman").value,
             reference: $("quotationReference").value.trim(),
-            store: "Gullapudi",
+            store: <?php echo json_encode(APP_STORE, json_flags()); ?>,
             region: $("quotationRegion").value,
             customer_id: Number($("customerSelect").value),
             from_quotation: prefill ? prefill.quotation_id : 0,

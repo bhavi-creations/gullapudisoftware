@@ -525,8 +525,8 @@ include 'header.php';
         <!-- LETTERHEAD -->
         <div class="di-sheet-head">
             <div>
-                <p class="di-company">GULLAPUDI</p>
-                <p class="di-company-sub">GLASS &amp; PLYWOOD CENTRE</p>
+                <p class="di-company"><?php echo e(COMPANY_SHORT); ?></p>
+                <?php if (COMPANY_TAGLINE !== ''): ?><p class="di-company-sub"><?php echo e(COMPANY_TAGLINE); ?></p><?php endif; ?>
                 <p class="di-company-meta">
                     <?php echo e(implode('  |  ', array_filter([COMPANY_PHONE, COMPANY_GSTIN ? 'GSTIN: ' . COMPANY_GSTIN : '', COMPANY_ADDRESS]))); ?>
                 </p>
