@@ -3,17 +3,31 @@
 |--------------------------------------------------------------------------
 | GULLAPUDI - APPLICATION CONFIGURATION
 |--------------------------------------------------------------------------
-| Change these values to match your MySQL server.
-| XAMPP default: host=localhost, user=root, password='' (empty).
-| The database and all tables are created automatically on first load.
+| Two database setups - picked automatically:
+| - LOCAL : opened as http://localhost/... (XAMPP, user root, no password)
+| - LIVE  : opened on the subdomain (hosting database below)
+| All tables are created automatically on first load.
 |--------------------------------------------------------------------------
 */
 
-define('DB_HOST', 'localhost');
-define('DB_PORT', 3306);
-define('DB_NAME', 'gullapudi_db');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+$appHost = strtolower(preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
+define('IS_LOCAL', PHP_SAPI === 'cli' || in_array($appHost, ['localhost', '127.0.0.1', '::1'], true));
+
+if (IS_LOCAL) {
+    // Local XAMPP
+    define('DB_HOST', 'localhost');
+    define('DB_PORT', 3306);
+    define('DB_NAME', 'gullapudi_db');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+} else {
+    // Live subdomain (hosting)
+    define('DB_HOST', 'localhost');
+    define('DB_PORT', 3306);
+    define('DB_NAME', 'gullapudisoftware');
+    define('DB_USER', 'bhavicreations');
+    define('DB_PASS', 'd8Az75YlgmyBnVM');
+}
 
 define('APP_NAME', 'Gullapudi Glass & Plywood Centre');
 define('APP_TIMEZONE', 'Asia/Kolkata');
@@ -28,8 +42,9 @@ define('UPLOAD_DIR', __DIR__ . '/../uploads');
 
 /* Multi-business: every business account gets its own database.
    The master database only lists the accounts (which database each one uses). */
-define('MASTER_DB_NAME', 'gullapudi_master');
-define('TENANT_DB_PREFIX', 'gullapudi_biz_');
+// Live hosting gives one database, so the accounts list is kept inside it.
+define('MASTER_DB_NAME', IS_LOCAL ? 'gullapudi_master' : DB_NAME);
+define('TENANT_DB_PREFIX', IS_LOCAL ? 'gullapudi_biz_' : 'gullapudisoftware_biz_');
 define('MAIN_BUSINESS_NAME', 'Gullapudi Glass & Plywood Centre');
 
 /* Company details of the MAIN business (database DB_NAME). They are copied into its

@@ -43,7 +43,9 @@ function backup_create(?PDO $pdo = null, ?string $dir = null): array
     gzwrite($gz, "SET FOREIGN_KEY_CHECKS=0;\nSET NAMES utf8mb4;\n\n");
 
     foreach ($tables as $table) {
-        if ($table === 'backup_operations') {
+        // History stays with the live database; the business accounts list (live
+        // hosting keeps it in the main database) is never part of a business backup.
+        if ($table === 'backup_operations' || ($table === 'accounts' && MASTER_DB_NAME === current_db_name())) {
             continue; // history stays with the live database
         }
         $create = $pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];
@@ -91,7 +93,8 @@ function backup_restore(string $file): int
             continue;
         }
         // Never let a restore touch the backup history table.
-        if (preg_match('/`backup_operations`/i', $statement)) {
+        if (preg_match('/`backup_operations`/i', $statement)
+            || (MASTER_DB_NAME === current_db_name() && preg_match('/`accounts`/i', $statement))) {
             continue;
         }
         $pdo->exec($statement);
