@@ -1,0 +1,5 @@
+# Database backups and uploaded images are data, not code
+backups/*
+!backups/.htaccess
+uploads/*
+!uploads/.htaccess
