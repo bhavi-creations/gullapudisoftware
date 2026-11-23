@@ -80,10 +80,19 @@ function customer_data(array $in): array
         $data['last_name'] = $last ?: null;
     }
     if (isset($in['account_type'])) {
-        $data['account_type'] = in_str($in, 'account_type', 30) ?: 'Individual';
+        $type = strtolower(in_str($in, 'account_type', 30));
+        $data['account_type'] = $type === 'business' ? 'Business' : 'Individual';
     }
     if (isset($in['gstin'])) {
-        $data['gstin'] = in_str($in, 'gstin', 20) ?: null;
+        $gstin = strtoupper(preg_replace('/\s+/', '', in_str($in, 'gstin', 20)));
+        if ($gstin !== '' && !preg_match('/^[0-9]{2}[A-Z0-9]{13}$/', $gstin)) {
+            json_response(['success' => false, 'message' => 'Enter a valid 15-character GST number.'], 422);
+        }
+        // GST number applies only to Business accounts.
+        if (($data['account_type'] ?? '') === 'Individual') {
+            $gstin = '';
+        }
+        $data['gstin'] = $gstin ?: null;
     }
     if (isset($in['addresses']) && is_array($in['addresses'])) {
         $addresses = [];

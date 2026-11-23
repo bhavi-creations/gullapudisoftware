@@ -82,6 +82,27 @@
                             </select>
                         </div>
 
+                        <!-- GST NUMBER (Business only) -->
+                        <div class="ac-field d-none" id="gstField">
+                            <label for="customerGstin"
+                                   class="ac-form-label">
+                                GST Number (GSTIN)
+                            </label>
+
+                            <div class="ac-input-group">
+                                <i class="bi bi-receipt ac-input-icon"></i>
+
+                                <input type="text"
+                                       id="customerGstin"
+                                       name="gstin"
+                                       class="ac-form-control"
+                                       placeholder="e.g. 37ABCDE1234F1Z5"
+                                       maxlength="15"
+                                       style="text-transform: uppercase;"
+                                       disabled>
+                            </div>
+                        </div>
+
                         <!-- FIRST NAME -->
                         <div class="ac-field">
                             <label for="firstName"
@@ -417,6 +438,24 @@
             : "Customer is inactive";
     });
 
+    // Show GST field only for Business accounts.
+    const accountTypeSelect = document.getElementById("accountType");
+    const gstField = document.getElementById("gstField");
+    const gstInput = document.getElementById("customerGstin");
+
+    function toggleGstField() {
+        const isBusiness = accountTypeSelect.value === "business";
+        gstField.classList.toggle("d-none", !isBusiness);
+        gstInput.disabled = !isBusiness;
+        if (!isBusiness) gstInput.value = "";
+    }
+
+    accountTypeSelect.addEventListener("change", toggleGstField);
+    gstInput.addEventListener("input", function () {
+        this.value = this.value.toUpperCase().replace(/[^0-9A-Z]/g, "");
+    });
+    toggleGstField();
+
     // Initial address.
     addAddress();
 
@@ -450,6 +489,15 @@
             return;
         }
 
+        const isBusiness = accountTypeSelect.value === "business";
+        const gstin = isBusiness ? gstInput.value.trim().toUpperCase() : "";
+
+        if (gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(gstin)) {
+            gstInput.focus();
+            alert("Please enter a valid 15-character GST number.");
+            return;
+        }
+
         const addresses = [];
 
         addressContainer.querySelectorAll(".ac-address-card")
@@ -474,7 +522,9 @@
         const customer = {
 
             account_type:
-                document.getElementById("accountType").value,
+                isBusiness ? "Business" : "Individual",
+
+            gstin: gstin,
 
             first_name: firstName,
 

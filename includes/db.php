@@ -352,7 +352,7 @@ function db_schema(): array
     ];
 }
 
-const DB_SCHEMA_VERSION = '2';
+const DB_SCHEMA_VERSION = '3';
 
 function db_install(PDO $pdo): void
 {
@@ -379,6 +379,11 @@ function db_install(PDO $pdo): void
         ['invoices', 'eway_bill', 'VARCHAR(50) NULL'],
         ['invoices', 'vehicle_no', 'VARCHAR(50) NULL'],
         ['invoices', 'dispatched_through', 'VARCHAR(150) NULL'],
+        // v3: customer account type + GST number
+        ['customers', 'account_type', "VARCHAR(30) NOT NULL DEFAULT 'Individual'"],
+        ['customers', 'first_name', 'VARCHAR(100) NULL'],
+        ['customers', 'last_name', 'VARCHAR(100) NULL'],
+        ['customers', 'gstin', 'VARCHAR(20) NULL'],
     ];
     foreach ($newColumns as [$table, $column, $definition]) {
         $columnExists->execute([$table, $column]);
