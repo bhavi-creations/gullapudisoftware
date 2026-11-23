@@ -509,6 +509,7 @@
       rows: [
         ["Customer Name", customer.name],
         ["Account Type", customer.account_type],
+        ["Business Name", customer.business_name],
         ["Mobile", customer.mobile],
         ["Email", customer.email],
         ["GSTIN", customer.gstin],

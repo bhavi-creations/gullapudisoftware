@@ -70,6 +70,7 @@ CREATE TABLE `customers` (
   `account_type` varchar(30) NOT NULL DEFAULT 'Individual',
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
+  `business_name` varchar(200) DEFAULT NULL,
   `name` varchar(200) NOT NULL,
   `mobile` varchar(15) NOT NULL,
   `email` varchar(254) DEFAULT NULL,

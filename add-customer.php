@@ -82,6 +82,26 @@
                             </select>
                         </div>
 
+                        <!-- BUSINESS NAME (Business only) -->
+                        <div class="ac-field d-none" id="businessNameField">
+                            <label for="businessName"
+                                   class="ac-form-label">
+                                Business Name
+                            </label>
+
+                            <div class="ac-input-group">
+                                <i class="bi bi-building ac-input-icon"></i>
+
+                                <input type="text"
+                                       id="businessName"
+                                       name="business_name"
+                                       class="ac-form-control"
+                                       placeholder="Enter business name"
+                                       maxlength="200"
+                                       disabled>
+                            </div>
+                        </div>
+
                         <!-- GST NUMBER (Business only) -->
                         <div class="ac-field d-none" id="gstField">
                             <label for="customerGstin"
@@ -442,12 +462,16 @@
     const accountTypeSelect = document.getElementById("accountType");
     const gstField = document.getElementById("gstField");
     const gstInput = document.getElementById("customerGstin");
+    const businessNameField = document.getElementById("businessNameField");
+    const businessNameInput = document.getElementById("businessName");
 
     function toggleGstField() {
         const isBusiness = accountTypeSelect.value === "business";
-        gstField.classList.toggle("d-none", !isBusiness);
-        gstInput.disabled = !isBusiness;
-        if (!isBusiness) gstInput.value = "";
+        [gstField, businessNameField].forEach(f => f.classList.toggle("d-none", !isBusiness));
+        [gstInput, businessNameInput].forEach(i => {
+            i.disabled = !isBusiness;
+            if (!isBusiness) i.value = "";
+        });
     }
 
     accountTypeSelect.addEventListener("change", toggleGstField);
@@ -525,6 +549,8 @@
                 isBusiness ? "Business" : "Individual",
 
             gstin: gstin,
+
+            business_name: isBusiness ? businessNameInput.value.trim() : "",
 
             first_name: firstName,
 

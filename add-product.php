@@ -7,18 +7,16 @@
 require_once __DIR__ . '/includes/init.php';
 
 $stores = [
-    APP_STORE . ' Godown',
-    'Main Store',
-    'Warehouse'
+    'Gullapudi Shop',
+    'Gullapudi Godown'
 ];
 
 $categoryRows = db_all('SELECT id, name FROM categories WHERE enabled = 1 ORDER BY sort_order, name');
 $categories = array_column($categoryRows, 'name');
 
 $productTypes = [
-    'Simple Product',
-    'Variable Product',
-    'Service'
+    'Manufacture',
+    'Customized'
 ];
 
 $taxes = [];
@@ -845,7 +843,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     ["store", "category", "product_type", "discount_type", "measurement_unit"].forEach(field => {
         const select = productForm.elements[field];
-        if (select && formValues[field]) select.value = formValues[field];
+        if (!select || !formValues[field]) return;
+        // Keep values saved earlier (e.g. old store/type names) selectable when editing.
+        if (![...select.options].some(o => o.value === formValues[field])) {
+            select.add(new Option(formValues[field], formValues[field]));
+        }
+        select.value = formValues[field];
     });
 
     ["taxes", "default_taxes"].forEach(field => {

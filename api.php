@@ -94,6 +94,13 @@ function customer_data(array $in): array
         }
         $data['gstin'] = $gstin ?: null;
     }
+    if (isset($in['business_name'])) {
+        $businessName = in_str($in, 'business_name', 200);
+        if (($data['account_type'] ?? '') === 'Individual') {
+            $businessName = '';
+        }
+        $data['business_name'] = $businessName ?: null;
+    }
     if (isset($in['addresses']) && is_array($in['addresses'])) {
         $addresses = [];
         foreach (array_slice($in['addresses'], 0, 20) as $a) {

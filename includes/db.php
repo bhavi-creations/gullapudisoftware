@@ -116,6 +116,7 @@ function db_schema(): array
     account_type VARCHAR(30) NOT NULL DEFAULT 'Individual',
     first_name VARCHAR(100) NULL,
     last_name VARCHAR(100) NULL,
+    business_name VARCHAR(200) NULL,
     name VARCHAR(200) NOT NULL,
     mobile VARCHAR(15) NOT NULL,
     email VARCHAR(254) NULL,
@@ -352,7 +353,7 @@ function db_schema(): array
     ];
 }
 
-const DB_SCHEMA_VERSION = '3';
+const DB_SCHEMA_VERSION = '4';
 
 function db_install(PDO $pdo): void
 {
@@ -384,6 +385,8 @@ function db_install(PDO $pdo): void
         ['customers', 'first_name', 'VARCHAR(100) NULL'],
         ['customers', 'last_name', 'VARCHAR(100) NULL'],
         ['customers', 'gstin', 'VARCHAR(20) NULL'],
+        // v4: business name for Business customers
+        ['customers', 'business_name', 'VARCHAR(200) NULL'],
     ];
     foreach ($newColumns as [$table, $column, $definition]) {
         $columnExists->execute([$table, $column]);
