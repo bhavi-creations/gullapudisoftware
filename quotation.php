@@ -31,6 +31,7 @@ function quotations_all(bool $masterOnly = false): array
         db_all('SELECT q.id, q.quotation_id, q.date, q.valid_upto, q.customer, q.salesman, q.reference, q.region,
                        q.notes, q.subtotal, q.discount, q.tax, q.amount, q.status, q.is_master,
                        inv.id AS invoice_id, inv.invoice_number, inv.eway_bill, inv.vehicle_no, inv.dispatched_through,
+                       (SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE inv.invoice_number IS NOT NULL AND p.invoice = inv.invoice_number) AS invoice_paid,
                        c.mobile AS customer_mobile, c.email AS customer_email,
                        c.business_name AS customer_business, c.gstin AS customer_gstin,
                        (SELECT GROUP_CONCAT(CONCAT_WS(\' \', i.name, i.thickness, i.size, i.hsn) SEPARATOR \' | \')
@@ -41,7 +42,7 @@ function quotations_all(bool $masterOnly = false): array
                 . ($masterOnly ? ' WHERE q.is_master = 1' : '') .
                 ' ORDER BY q.id DESC'),
         ['is_master'],
-        ['subtotal', 'discount', 'tax', 'amount']
+        ['subtotal', 'discount', 'tax', 'amount', 'invoice_paid']
     );
 }
 
@@ -717,10 +718,30 @@ include 'header.php';
                 </div>
                 <div class="border rounded-3 p-3 mt-3" style="background:#f7faff">
                     <div class="fw-bold mb-2"><i class="bi bi-cash-coin text-success me-1"></i> Advance / Amount Paid Now <small class="text-muted fw-normal">(optional)</small></div>
+                    <!-- Total amount, already paid, paid now and balance -->
+                    <div class="cv-amounts mb-3">
+                        <div class="cv-amt total"><span>Total Amount</span><strong id="cvTotal">Rs 0.00</strong></div>
+                        <div class="cv-amt" id="cvPaidBox"><span>Already Paid</span><strong id="cvPaid">Rs 0.00</strong></div>
+                        <div class="cv-amt now"><span>Paid Now</span><strong id="cvNow">Rs 0.00</strong></div>
+                        <div class="cv-amt bal"><span>Balance</span><strong id="cvBalance">Rs 0.00</strong></div>
+                    </div>
+                    <style>
+                        .cv-amounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+                        .cv-amt{background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px 12px}
+                        .cv-amt span{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#6b7c95}
+                        .cv-amt strong{font-size:17px;color:#1d2f4a}
+                        .cv-amt.total{border-color:#b9cdf0;background:#eef5ff}
+                        .cv-amt.total strong{color:#0f5fcc}
+                        .cv-amt.now strong{color:#0f7a3d}
+                        .cv-amt.bal strong{color:#c2343c}
+                        .cv-amt.bal.clear strong{color:#0f7a3d}
+                        .cv-fill{font-size:12px;padding:0;border:0;background:none;color:#0f5fcc;font-weight:600;text-decoration:underline}
+                    </style>
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label class="form-label fw-semibold" for="convertAdvAmount">Amount (Rs)</label>
                             <input type="number" class="form-control" id="convertAdvAmount" min="0" step="0.01" placeholder="0.00">
+                            <button type="button" class="cv-fill mt-1" id="cvFullBtn">Pay full balance</button>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold" for="convertAdvMode">Payment Mode</label>
@@ -1198,6 +1219,29 @@ include 'header.php';
     // Convert to Invoice: ask for dispatch details, then create order + invoice.
     const invoiceModal = bootstrap.Modal.getOrCreateInstance($("convertInvoiceModal"));
 
+    // Total / already paid / paid now / balance in the convert popup.
+    let cvState = { total: 0, paid: 0 };
+    const rs = v => "Rs " + Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function updateConvertAmounts() {
+        const due = Math.max(0, Math.round((cvState.total - cvState.paid) * 100) / 100);
+        const now = Math.max(0, Number($("convertAdvAmount").value || 0));
+        const balance = Math.round((due - now) * 100) / 100;
+        $("cvTotal").textContent = rs(cvState.total);
+        $("cvPaid").textContent = rs(cvState.paid);
+        $("cvNow").textContent = rs(now);
+        $("cvBalance").textContent = balance < 0 ? "More than total" : rs(balance);
+        $("cvBalance").parentElement.classList.toggle("clear", balance === 0);
+        $("convertAdvAmount").max = due;
+        $("convertAdvAmount").classList.toggle("is-invalid", balance < 0);
+        $("cvFullBtn").textContent = "Pay full balance (" + rs(due) + ")";
+        $("cvFullBtn").style.display = due > 0 ? "" : "none";
+    }
+    $("convertAdvAmount").addEventListener("input", updateConvertAmounts);
+    $("cvFullBtn").addEventListener("click", () => {
+        $("convertAdvAmount").value = Math.max(0, Math.round((cvState.total - cvState.paid) * 100) / 100).toFixed(2);
+        updateConvertAmounts();
+    });
+
     function openInvoiceModal(id) {
         const item = quotations.find(q => Number(q.id) === Number(id));
         if (!item) return;
@@ -1224,6 +1268,10 @@ include 'header.php';
                 : "Eway bill, dispatch and vehicle are optional. An order and a tax invoice are created, product stock is reduced, and the quotation is marked Converted.";
         $("convertInvoiceInfo").textContent =
             `${item.quotation_id} - ${item.customer || ""} - ${formatAmount(item.amount)}`;
+        // Totals for the "Amount Paid Now" box. Already-paid only counts when the old invoice is updated.
+        cvState = { total: Number(item.amount || 0), paid: updating ? Number(item.invoice_paid || 0) : 0 };
+        $("cvPaidBox").style.display = cvState.paid > 0 ? "" : "none";
+        updateConvertAmounts();
         // Close the details popup (if open) before showing this one.
         document.querySelectorAll(".modal.show").forEach(m => {
             const inst = bootstrap.Modal.getInstance(m);

@@ -16,7 +16,7 @@ $isOrder = $posType === 'order';
 
 $L = $isOrder ? [
     'title' => 'Order (POS)',
-    'subtitle' => 'Create new sales order and invoice for your customer',
+    'subtitle' => 'Create a sales order - add it to an invoice or convert it to a quotation later',
     'new' => 'New Order',
     'list' => 'Orders',
     'listUrl' => 'orders.php',
@@ -24,9 +24,9 @@ $L = $isOrder ? [
     'valid' => 'Due Date',
     'details' => 'Order Details',
     'summary' => 'Order Summary',
-    'save' => 'Save Order & Invoice',
-    'saveMaster' => 'Save Order & Invoice',
-    'saveGenerate' => 'Save & Print Invoice',
+    'save' => 'Save Order',
+    'saveMaster' => 'Save Order',
+    'saveGenerate' => 'Save & Add to Invoice',
     'waTitle' => 'Order',
 ] : [
     'title' => 'Quotation (POS)',
@@ -202,8 +202,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         if ($isOrder) {
+            // The order is saved on its own (stock is reserved now).
+            // "Add to Invoice" / "Convert to Quotation" are on the Orders page.
             $orderNumber = next_number('orders', 'order_number', 'ORD-');
-            $invoiceNumber = next_number('invoices', 'invoice_number', 'SI-');
 
             $orderId = db_insert('orders', [
                 'order_number' => $orderNumber,
@@ -220,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'discount' => round($discountTotal, 2),
                 'tax' => round($taxTotal, 2),
                 'amount' => $total,
-                'status' => 'Invoice Raised',
+                'status' => 'Pending',
                 'created_by' => (int)$_SESSION['user_id'],
             ]);
 
@@ -229,36 +230,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db_exec('UPDATE products SET stock = stock - ? WHERE id = ?', [$si['quantity'], $si['product_id']]);
             }
 
-            $invoiceId = db_insert('invoices', [
-                'invoice_number' => $invoiceNumber,
-                'order_id' => $orderId,
-                'customer_id' => $customerId,
-                'customer' => $customer['name'],
-                'date' => $date,
-                'due_date' => $valid,
-                'region' => $region,
-                'subtotal' => round($subtotal, 2),
-                'discount' => round($discountTotal, 2),
-                'tax' => round($taxTotal, 2),
-                'amount' => $total,
-                'status' => 'Submitted',
-            ]);
-
-            db_update('orders', ['invoice_id' => $invoiceId], $orderId);
-
             $fromQuotation = (int)($payload['from_quotation'] ?? 0);
             if ($fromQuotation) {
                 db_exec("UPDATE quotations SET status = 'Converted' WHERE id = ?", [$fromQuotation]);
             }
 
             $pdo->commit();
-            log_activity('Orders', "Order $orderNumber / Invoice $invoiceNumber created for {$customer['name']} (Rs " . number_format($total, 2) . ')');
+            log_activity('Orders', "Order $orderNumber created for {$customer['name']} (Rs " . number_format($total, 2) . ')');
 
             json_response([
                 'success' => true,
                 'quotation_id' => $orderNumber,
                 'redirect' => ($payload['mode'] ?? '') === 'generate'
-                    ? 'invoice-print.php?id=' . $invoiceId . '&new=1'
+                    ? 'orders.php?invoice=' . $orderId
                     : 'orders.php?saved=' . urlencode($orderNumber)
             ]);
         }

@@ -151,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $vName = mb_substr(trim((string)($_POST['variant_name'][$i] ?? '')) ?: ($name . ' ' . $t), 0, 200);
                 $vPrice = trim((string)($_POST['variant_price'][$i] ?? ''));
                 $vStock = trim((string)($_POST['variant_stock'][$i] ?? ''));
+                $vHsn = mb_substr(trim((string)($_POST['variant_hsn'][$i] ?? '')), 0, 50);
                 if (($vPrice !== '' && (!is_numeric($vPrice) || (float)$vPrice < 0)) ||
                     ($vStock !== '' && (!is_numeric($vStock) || (float)$vStock < 0))) {
                     $errors[] = "Enter a valid price and stock for thickness $t.";
@@ -172,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'price' => $vPrice === '' ? $product['price'] : (float)$vPrice,
                     // New thicknesses added while editing start at 0 stock unless typed.
                     'stock' => $vStock === '' ? ($editing && !$isCurrent ? 0 : $product['stock']) : (float)$vStock,
+                    'hsn_code' => $vHsn !== '' ? $vHsn : $product['hsn_code'],
                 ]);
                 if ($isCurrent) {
                     $currentRow = $row;
@@ -235,6 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'thickness' => (string)($_POST['variant_thickness'][$i] ?? ''),
             'price' => (string)($_POST['variant_price'][$i] ?? ''),
             'stock' => (string)($_POST['variant_stock'][$i] ?? ''),
+            'hsn' => (string)($_POST['variant_hsn'][$i] ?? ''),
             'current' => ($_POST['variant_current'][$i] ?? '0') === '1',
         ], array_keys((array)($_POST['variant_thickness'] ?? []))),
     ];
@@ -559,7 +562,8 @@ include 'header.php';
                 .tv-hint{display:block;margin-top:4px;font-size:12px;color:#0f7a3d;font-weight:600}
                 @media (max-width:767px){
                     .tv-table tr:not(.tv-empty){grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) 36px !important}
-                    .tv-table td:nth-child(1){order:1}.tv-table td:nth-child(3){order:2}.tv-table td:nth-child(4){order:3}.tv-table td:nth-child(5){order:4}
+                    .tv-table td:nth-child(1){order:1}.tv-table td:nth-child(4){order:2}.tv-table td:nth-child(5){order:3}.tv-table td:nth-child(6){order:4}
+                    .tv-table td:nth-child(3){order:6;grid-column:1/-1}
                     .tv-table td:nth-child(2){order:5;grid-column:1/-1}
                 }
                 .tv-entry{display:flex;gap:8px;flex-wrap:wrap}
@@ -590,7 +594,7 @@ include 'header.php';
                 /* Each thickness = a small card: Thickness / Price / Stock on top, full-width name below. */
                 .tv-table thead{display:none}
                 .tv-table,.tv-table tbody{display:block;width:100%}
-                .tv-table tr:not(.tv-empty){display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2.2fr) minmax(0,1fr) minmax(0,1fr) 36px;align-items:end;gap:8px;background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px;margin-bottom:8px}
+                .tv-table tr:not(.tv-empty){display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;align-items:end;gap:8px;background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px;margin-bottom:8px}
                 .tv-table tr.tv-current{border-color:#9fd9b6}
                 .tv-table tr.tv-empty{display:block}
                 .tv-table tr.tv-empty td{display:block}
@@ -1262,6 +1266,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const nameInput = document.getElementById("productName");
         const priceInput = document.getElementById("productPrice");
         const stockInput = document.getElementById("productStock");
+        const hsnInput = document.getElementById("hsnCode");
         const thicknessInput = document.getElementById("thickness");
         const saveLabel = document.getElementById("saveProductBtn");
         const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1297,6 +1302,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <input class="tv-thk" name="variant_thickness[]" value="${esc(v.thickness || "")}" required></td>
                 <td data-label="Product name"><input class="tv-name" name="variant_name[]" value="${esc(v.name || autoName(v.thickness || ""))}" maxlength="200">
                     ${current ? '<span class="tv-badge">This product &middot; updated</span>' : (isEdit ? '<span class="tv-badge new">New product</span>' : "")}</td>
+                <td data-label="HSN Code"><input class="tv-hsn" name="variant_hsn[]" maxlength="50" value="${esc(v.hsn || "")}" placeholder="${esc(hsnInput.value || "HSN")}"></td>
                 <td data-label="Price"><input type="number" name="variant_price[]" min="0" step="0.01" value="${esc(v.price || "")}" placeholder="${esc(priceInput.value || "0")}"></td>
                 <td data-label="Stock"><input type="number" name="variant_stock[]" min="0" step="0.01" value="${esc(v.stock || "")}" placeholder="${esc(stockHint)}"></td>
                 <td class="tv-act">${current ? "" : '<button type="button" class="tv-del" title="Remove"><i class="bi bi-trash"></i></button>'}</td>`;
@@ -1408,6 +1414,10 @@ document.addEventListener("DOMContentLoaded", function () {
             tvRows.querySelectorAll("tr:not(.tv-empty)").forEach(tr => {
                 if (tr.dataset.auto) tr.querySelector(".tv-name").value = autoName(tr.querySelector(".tv-thk").value.trim());
             });
+        });
+        // Empty HSN boxes show (and use) the HSN Code above.
+        hsnInput.addEventListener("input", () => {
+            tvRows.querySelectorAll(".tv-hsn").forEach(i => i.placeholder = hsnInput.value || "HSN");
         });
         [priceInput, stockInput].forEach((inp, k) => inp.addEventListener("input", () => {
             tvRows.querySelectorAll("tr:not(.tv-empty)").forEach(tr => {

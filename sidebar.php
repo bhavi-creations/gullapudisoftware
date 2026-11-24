@@ -13,54 +13,63 @@ require_once __DIR__ . '/includes/init.php';
 $currentPage = basename(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '');
 $isAdmin = (current_user()['role'] ?? '') === 'admin';
 
-// [label, icon, url, pages that mark it active]
+// Arranged in the order the work happens:
+// Dashboard -> Sales (quote, order, bill) -> Money -> Stock -> People -> Reports -> Settings.
+// [label, icon, url, pages that mark it active, who sees it: '' = by Access rights, 'admin', 'super']
 $appNav = [
     'Overview' => [
         ['Dashboard', 'grid-1x2', 'dashboard.php', ['dashboard.php']],
-        ['Reports', 'bar-chart-line', 'reports.php', ['reports.php']],
     ],
     'Sales' => [
         ['Quotations', 'file-earmark-text', 'quotation.php', ['quotation.php', 'add-quotation.php', 'quotation-print.php']],
         ['Master Quotations', 'star', 'master-quotation.php', ['master-quotation.php']],
         ['Orders', 'cart-check', 'orders.php', ['orders.php', 'add-order.php']],
-        ['Invoices', 'receipt', 'invoices.php', ['invoices.php']],
         ['Direct Invoice', 'receipt-cutoff', 'direct-invoice.php', ['direct-invoice.php']],
+        ['Invoices', 'receipt', 'invoices.php', ['invoices.php', 'invoice-print.php']],
+    ],
+    'Payments & Returns' => [
         ['Payments', 'credit-card-2-front', 'payment.php', ['payment.php']],
         ['Returns & Damage', 'arrow-return-left', 'returns-damage.php', ['returns-damage.php']],
     ],
-    'Catalogue' => [
+    'Stock' => [
         ['Products', 'box-seam', 'products.php', ['products.php', 'add-product.php']],
         ['Categories', 'tags', 'categories.php', ['categories.php', 'add-categories.php']],
-        ['Taxes', 'percent', 'taxes.php', ['taxes.php']],
     ],
     'People' => [
         ['Customers', 'people', 'customers.php', ['customers.php', 'add-customer.php']],
         ['Employees', 'person-badge', 'employees.php', ['employees.php', 'add-employees.php']],
+        // Owner gives each employee View / Add / Edit / Delete access per page.
+        ['Access', 'shield-lock', 'access.php', ['access.php'], 'admin'],
     ],
-    'Tools' => [
+    'Reports' => [
+        ['Reports', 'bar-chart-line', 'reports.php', ['reports.php']],
         ['Tally Export & GST', 'arrow-left-right', 'tally-export.php', ['tally-export.php']],
         ['WhatsApp Center', 'whatsapp', 'whatsapp-center.php', ['whatsapp-center.php']],
+    ],
+    'Settings' => [
+        ['Taxes (GST)', 'percent', 'taxes.php', ['taxes.php']],
+        ['Business Settings', 'building-gear', 'business-settings.php', ['business-settings.php'], 'admin'],
         ['Backup & Restore', 'cloud-arrow-up', 'backup-restore.php', ['backup-restore.php']],
+        // Only the main business's administrators can create / manage other businesses.
+        ['Business Accounts', 'buildings', 'business-accounts.php', ['business-accounts.php'], 'super'],
     ],
 ];
-// Hide pages this employee has no access to (Employees > Access).
+// Hide pages this user cannot open (Employees > Access, admin-only pages).
 foreach ($appNav as $group => $items) {
-    $appNav[$group] = array_values(array_filter($items, function ($menu) {
+    $appNav[$group] = array_values(array_filter($items, function ($menu) use ($isAdmin) {
+        $who = $menu[4] ?? '';
+        if ($who === 'admin') {
+            return $isAdmin;
+        }
+        if ($who === 'super') {
+            return is_super_admin();
+        }
         $module = page_module($menu[2]);
         return $module === null || user_can($module);
     }));
     if (!$appNav[$group]) {
         unset($appNav[$group]);
     }
-}
-if ($isAdmin) {
-    // Owner gives each employee View / Add / Edit / Delete access per page.
-    $appNav['People'][] = ['Access', 'shield-lock', 'access.php', ['access.php']];
-    $appNav['Tools'][] = ['Business Settings', 'building-gear', 'business-settings.php', ['business-settings.php']];
-}
-// Only the main business's administrators can create / manage other businesses.
-if (is_super_admin()) {
-    $appNav['Tools'][] = ['Business Accounts', 'buildings', 'business-accounts.php', ['business-accounts.php']];
 }
 
 function sbEscape($value) {
