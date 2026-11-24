@@ -265,10 +265,34 @@ function business_create(array $data): int
     $m->prepare("INSERT INTO accounts (business_name, owner_name, mobile, username, db_name, status) VALUES (?, ?, ?, ?, ?, 'active')")
         ->execute([$data['business_name'], $data['owner_name'], $data['mobile'] ?: null, $data['username'], 'pending_' . bin2hex(random_bytes(8))]);
     $id = (int)$m->lastInsertId();
-    $dbName = TENANT_DB_PREFIX . $id;
+    $given = trim((string)($data['db_name'] ?? ''));
+    $dbName = $given !== '' ? $given : TENANT_DB_PREFIX . $id;
+    $created = false;   // true when this function made the database itself
+    $pdo = null;        // set once the (empty) database is open
 
     try {
-        $pdo = db_connect($dbName, true);
+        if ($given !== '') {
+            // A database made in the hosting panel (cPanel etc.) - must exist and be empty.
+            $pdo = business_existing_db($given);
+        } else {
+            try {
+                $open = db_connect($dbName, false);
+            } catch (PDOException $e) {
+                if (!str_contains($e->getMessage(), '1049')) {
+                    throw business_db_error($e);
+                }
+                try {
+                    $open = db_connect($dbName, true);
+                    $created = true;
+                } catch (PDOException $e2) {
+                    throw business_db_error($e2);
+                }
+            }
+            if (!$created && business_db_has_tables($open)) {
+                throw new RuntimeException('Database ' . $dbName . ' already has tables. Enter an empty database name.');
+            }
+            $pdo = $open;
+        }
         db_install($pdo);
 
         // db_install() adds a default administrator - turn it into the owner's login.
@@ -297,11 +321,67 @@ function business_create(array $data): int
         $m->prepare('UPDATE accounts SET db_name = ? WHERE id = ?')->execute([$dbName, $id]);
     } catch (Throwable $e) {
         try {
-            $m->exec('DROP DATABASE IF EXISTS `' . $dbName . '`');
+            if ($created) {
+                $m->exec('DROP DATABASE IF EXISTS `' . $dbName . '`');
+            } elseif ($pdo instanceof PDO) {
+                business_db_clear($pdo);   // it was empty before - undo the half-made tables
+            }
         } catch (Throwable $ignored) {
         }
         $m->prepare('DELETE FROM accounts WHERE id = ?')->execute([$id]);
         throw $e;
     }
     return $id;
+}
+
+/** Opens a database made in the hosting panel and checks it can hold a new business. */
+function business_existing_db(string $name): PDO
+{
+    if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', $name)) {
+        throw new RuntimeException('Database name: letters, numbers and _ only.');
+    }
+    if (in_array(strtolower($name), [strtolower(DB_NAME), strtolower(MASTER_DB_NAME)], true)) {
+        throw new RuntimeException('That is the main business database. Create a new empty database for this business.');
+    }
+    if (master_one('SELECT id FROM accounts WHERE db_name = ?', [$name])) {
+        throw new RuntimeException('Database ' . $name . ' is already used by another business.');
+    }
+    try {
+        $pdo = db_connect($name, false);
+    } catch (PDOException $e) {
+        throw new RuntimeException('Cannot open database "' . $name . '". In the hosting panel create it and add the user "'
+            . DB_USER . '" to it with ALL PRIVILEGES, then try again. (' . $e->getMessage() . ')');
+    }
+    if (business_db_has_tables($pdo)) {
+        throw new RuntimeException('Database ' . $name . ' already has tables. Use a new empty database.');
+    }
+    return $pdo;
+}
+
+function business_db_has_tables(PDO $pdo): bool
+{
+    return (bool)$pdo->query('SHOW TABLES')->fetchColumn();
+}
+
+/** Removes every table of a business database (used when the database itself cannot be dropped). */
+function business_db_clear(PDO $pdo): void
+{
+    $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    foreach ($tables as $t) {
+        $pdo->exec('DROP TABLE IF EXISTS `' . str_replace('`', '``', $t) . '`');
+    }
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+}
+
+/** Turns "access denied" (hosting does not allow creating databases) into clear steps. */
+function business_db_error(PDOException $e): Throwable
+{
+    $msg = $e->getMessage();
+    if (str_contains($msg, '1044') || str_contains($msg, '1045') || stripos($msg, 'denied') !== false) {
+        return new RuntimeException('Your hosting does not allow the software to create a database by itself. '
+            . 'Open the hosting panel (cPanel > MySQL Databases), create a new empty database, add the user "' . DB_USER
+            . '" to it with ALL PRIVILEGES, then type that database name in "Database Name" and click Create Business again.');
+    }
+    return $e;
 }

@@ -13,7 +13,9 @@ date_default_timezone_set(APP_TIMEZONE);
 function current_db_name(): string
 {
     $name = $_SESSION['tenant_db'] ?? '';
-    if (is_string($name) && $name !== '' && preg_match('/^' . preg_quote(TENANT_DB_PREFIX, '/') . '[0-9]+$/', $name)) {
+    // Set only by login.php from the accounts list; a business database is either
+    // auto-created (TENANT_DB_PREFIX + id) or one made in the hosting panel.
+    if (is_string($name) && $name !== '' && preg_match('/^[A-Za-z0-9_]{1,64}$/', $name)) {
         return $name;
     }
     return DB_NAME;

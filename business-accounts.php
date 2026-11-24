@@ -14,7 +14,7 @@ if (!is_super_admin()) {
 }
 
 $errors = [];
-$form = ['business_name' => '', 'owner_name' => '', 'mobile' => '', 'email' => '', 'username' => ''];
+$form = ['business_name' => '', 'owner_name' => '', 'mobile' => '', 'email' => '', 'username' => '', 'db_name' => ''];
 
 function ba_redirect(string $msg): void
 {
@@ -52,6 +52,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (strlen($password) < 8 || strlen($password) > 72) {
                 $errors[] = 'Password must be 8 to 72 characters.';
             }
+            if ($form['db_name'] !== '' && !preg_match('/^[A-Za-z0-9_]{1,64}$/', $form['db_name'])) {
+                $errors[] = 'Database name: letters, numbers and _ only (exactly as shown in the hosting panel).';
+            }
             $hasLogo = !empty($_FILES['logo']['name']);
             if ($hasLogo && ($logoError = logo_check($_FILES['logo']))) {
                 $errors[] = $logoError;
@@ -64,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $newId = business_create($form + ['password' => $password]);
                     if ($hasLogo) {
-                        $dbName = TENANT_DB_PREFIX . $newId;
+                        $dbName = (string)(master_one('SELECT db_name FROM accounts WHERE id = ?', [$newId])['db_name'] ?? '');
                         try {
                             company_save(['company_logo' => logo_store($_FILES['logo'], $dbName)], tenant_pdo($dbName));
                         } catch (Throwable $e) {
@@ -184,7 +187,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } catch (Throwable $e) {
                             // Database already missing - nothing to back up.
                         }
-                        master()->exec('DROP DATABASE IF EXISTS `' . $account['db_name'] . '`');
+                        try {
+                            master()->exec('DROP DATABASE IF EXISTS `' . $account['db_name'] . '`');
+                        } catch (PDOException $e) {
+                            // Hosting does not allow dropping databases: empty it instead
+                            // (the empty database can then be removed from the hosting panel).
+                            try {
+                                business_db_clear(db_connect($account['db_name'], false));
+                            } catch (PDOException $ignored) {
+                                // Database already missing.
+                            }
+                        }
                         master()->prepare('DELETE FROM accounts WHERE id = ?')->execute([$account['id']]);
                         foreach (glob(UPLOAD_DIR . '/logos/' . $account['db_name'] . '_*') ?: [] as $f) {
                             @unlink($f);
@@ -434,6 +447,11 @@ include 'header.php';
                     <div class="col-md-6">
                         <label class="form-label fw-semibold" for="bPass">Password * <span class="ba-sub">(min 8 characters)</span></label>
                         <input type="text" class="form-control" id="bPass" name="password" minlength="8" maxlength="72" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-semibold" for="bDb">Database Name <span class="ba-sub">(only if your hosting does not allow automatic databases)</span></label>
+                        <input type="text" class="form-control" id="bDb" name="db_name" maxlength="64" pattern="[A-Za-z0-9_]{1,64}" placeholder="Leave empty to create automatically" value="<?php echo e($form['db_name']); ?>">
+                        <div class="ba-sub mt-1">On cPanel / shared hosting: MySQL Databases &rarr; create a new database &rarr; add user <b><?php echo e(DB_USER); ?></b> with ALL PRIVILEGES &rarr; type the full database name here.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold" for="bLogo">Business Logo <span class="ba-sub">(optional - printed on invoices)</span></label>
