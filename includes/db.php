@@ -352,10 +352,19 @@ function db_schema(): array
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS stores (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    address VARCHAR(255) NULL,
+    phone VARCHAR(20) NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
 }
 
-const DB_SCHEMA_VERSION = '6';
+const DB_SCHEMA_VERSION = '7';
 
 function db_install(PDO $pdo): void
 {
@@ -447,6 +456,14 @@ function db_install(PDO $pdo): void
     // Link each product to the GST rate it already uses.
     $pdo->exec('UPDATE products p JOIN taxes t ON t.amount = p.tax_rate
                 SET p.tax_id = t.id WHERE p.tax_id IS NULL');
+
+    // v7: Stores page. Start the list with the store names already used on saved records.
+    if ((int)$pdo->query('SELECT COUNT(*) FROM stores')->fetchColumn() === 0) {
+        $pdo->exec("INSERT IGNORE INTO stores (name)
+                    SELECT DISTINCT TRIM(store) FROM (
+                        SELECT store FROM products UNION SELECT store FROM quotations UNION SELECT store FROM orders
+                    ) s WHERE store IS NOT NULL AND TRIM(store) <> ''");
+    }
 
     $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES ('schema_version', ?)")
         ->execute([DB_SCHEMA_VERSION]);
@@ -641,10 +658,58 @@ function gst_split_label(float $rate, bool $inter): string
  * Replace the product lines of an order and keep product stock correct:
  * stock of the old lines is given back first, then the new lines are taken out.
  */
-function order_replace_items(int $orderId, array $items): void
+/**
+ * Lines that ask for more than the product's stock, e.g. ["Plain MDF 3 mm (only 10 available)"].
+ * The same product on several lines is added together. Rows are locked (call inside a transaction).
+ */
+function stock_shortages(array $items): array
+{
+    $needed = [];
+    foreach ($items as $it) {
+        if (!empty($it['product_id'])) {
+            $pid = (int)$it['product_id'];
+            $needed[$pid] = ($needed[$pid] ?? 0) + (float)$it['quantity'];
+        }
+    }
+    $short = [];
+    foreach ($needed as $pid => $qty) {
+        $row = db_one('SELECT name, stock FROM products WHERE id = ? FOR UPDATE', [$pid]);
+        $have = $row ? (float)$row['stock'] : 0.0;
+        if ($qty > $have + 0.0001) {
+            $short[] = ($row['name'] ?? 'Product') . ' (only '
+                . rtrim(rtrim(number_format(max(0, $have), 2, '.', ''), '0'), '.') . ' available)';
+        }
+    }
+    return $short;
+}
+
+/** Thrown when a sale asks for more than the stock. */
+class StockShortException extends RuntimeException
+{
+}
+
+/** Stop the sale when any line is more than the stock (stock must never go below 0). */
+function require_stock(array $items): void
+{
+    $short = stock_shortages($items);
+    if ($short) {
+        throw new StockShortException('Not enough stock: ' . implode(', ', $short) . '. Reduce the quantity.');
+    }
+}
+
+/**
+ * Replace an order's lines: old lines go back to stock, new lines are taken.
+ * $checkStock = false lets the owner sell more than the stock on purpose
+ * (Quotation > Convert to Invoice > "Convert anyway").
+ */
+function order_replace_items(int $orderId, array $items, bool $checkStock = true): void
 {
     foreach (db_all('SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL', [$orderId]) as $old) {
         db_exec('UPDATE products SET stock = stock + ? WHERE id = ?', [$old['quantity'], $old['product_id']]);
+    }
+    // Old lines are back in stock now, so an edit can reuse them.
+    if ($checkStock) {
+        require_stock($items);
     }
     db_exec('DELETE FROM order_items WHERE order_id = ?', [$orderId]);
     foreach ($items as $it) {
@@ -730,4 +795,19 @@ function attach_stock_stats(array $rows): array
     }
     unset($r);
     return $rows;
+}
+
+/**
+ * Store names from the Stores page (enabled ones by default).
+ * The list is never empty: the business name is added as the first store when none exist.
+ */
+function store_names(bool $enabledOnly = true): array
+{
+    $names = array_column(db_all('SELECT name FROM stores' . ($enabledOnly ? ' WHERE enabled = 1' : '') . ' ORDER BY id'), 'name');
+    if (!$names && !(int)db_value('SELECT COUNT(*) FROM stores')) {
+        $default = defined('APP_STORE') && APP_STORE !== '' ? APP_STORE : 'Main Store';
+        db_exec('INSERT IGNORE INTO stores (name) VALUES (?)', [$default]);
+        $names = [$default];
+    }
+    return $names;
 }

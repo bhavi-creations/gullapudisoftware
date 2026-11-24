@@ -34,6 +34,7 @@ $appNav = [
     'Stock' => [
         ['Products', 'box-seam', 'products.php', ['products.php', 'add-product.php']],
         ['Categories', 'tags', 'categories.php', ['categories.php', 'add-categories.php']],
+        ['Stores', 'shop', 'stores.php', ['stores.php']],
     ],
     'People' => [
         ['Customers', 'people', 'customers.php', ['customers.php', 'add-customer.php']],

@@ -26,6 +26,7 @@ function app_modules(): array
         'returns'        => ['Returns & Damage', 'arrow-return-left', ['returns-damage.php']],
         'products'       => ['Products', 'box-seam', ['products.php', 'add-product.php']],
         'categories'     => ['Categories', 'tags', ['categories.php', 'add-categories.php']],
+        'stores'         => ['Stores', 'shop', ['stores.php']],
         'taxes'          => ['Taxes', 'percent', ['taxes.php']],
         'customers'      => ['Customers', 'people', ['customers.php', 'add-customer.php']],
         'employees'      => ['Employees', 'person-badge', ['employees.php', 'add-employees.php']],
@@ -157,19 +158,19 @@ function request_action(string $page): string
 
     if ($method !== 'POST') {
         // Opening a form page needs add / edit.
-        $editParams = ['add-quotation.php' => 'edit', 'add-product.php' => 'id', 'add-customer.php' => 'id',
+        $editParams = ['add-quotation.php' => 'edit', 'add-order.php' => 'edit', 'add-product.php' => 'id', 'add-customer.php' => 'id',
             'direct-invoice.php' => 'edit'];
         if (isset($editParams[$page])) {
             return !empty($_GET[$editParams[$page]]) ? 'edit' : 'add';
         }
-        if (in_array($page, ['add-categories.php', 'add-employees.php', 'add-order.php'], true)) {
+        if (in_array($page, ['add-categories.php', 'add-employees.php'], true)) {
             return 'add';
         }
         return 'view';
     }
 
     $action = strtolower((string)($page === 'api.php' ? ($_GET['action'] ?? '') : ($_POST['action'] ?? '')));
-    if ($action === '' && $page === 'add-quotation.php') {
+    if ($action === '' && in_array($page, ['add-quotation.php', 'add-order.php'], true)) {
         $data = json_decode((string)($_POST['quotation_data'] ?? ''), true);
         return !empty($data['edit_id']) ? 'edit' : 'add';
     }

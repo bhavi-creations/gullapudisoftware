@@ -204,6 +204,11 @@ include 'header.php';
         </div>
     </div>
 
+    <?php if (!empty($_GET['updated'])): ?>
+        <div class="alert alert-success">
+            Order <?php echo e($_GET['updated']); ?> updated. Stock and the invoice (if any) were corrected.
+        </div>
+    <?php endif; ?>
     <?php if (!empty($_GET['saved'])): ?>
         <div class="alert alert-success">
             Order <?php echo e($_GET['saved']); ?> saved. Use <strong>Add to Invoice</strong> to bill it, or <strong>Convert to Quotation</strong>.
@@ -404,6 +409,8 @@ include 'header.php';
                         ${canInvoice(o) ? `<button class="btn btn-sm btn-success ord-btn" data-action="to_invoice" data-id="${o.id}" title="Add to Invoice"><i class="bi bi-receipt"></i> Add to Invoice</button>` : ""}
                         <button class="btn btn-sm btn-outline-primary ord-btn" data-action="to_quotation" data-id="${o.id}" title="Convert to Quotation"><i class="bi bi-file-earmark-text"></i> To Quotation</button>
                         <button class="btn btn-sm btn-light border" data-action="view" data-id="${o.id}" title="View"><i class="bi bi-eye"></i></button>
+                        ${o.status !== "Cancelled" ? `<a class="btn btn-sm btn-light border" href="add-order.php?edit=${o.id}" title="Edit Order"><i class="bi bi-pencil-square text-primary"></i></a>` : ""}
+                        <button class="btn btn-sm btn-light border" data-action="delete" data-id="${o.id}" title="Delete Order"><i class="bi bi-trash3 text-danger"></i></button>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-light border" data-bs-toggle="dropdown" title="More"><i class="bi bi-three-dots-vertical"></i></button>
                             <ul class="dropdown-menu dropdown-menu-end">
@@ -450,6 +457,7 @@ include 'header.php';
                 ...(canInvoice(o) ? [{ label: "Add to Invoice", icon: "receipt", tone: "primary", onClick: () => openInvoice(id) }] : []),
                 ...(o.invoice_id && !canInvoice(o) ? [{ label: "Print Invoice", icon: "printer-fill", tone: "primary", href: "invoice-print.php?id=" + o.invoice_id, newTab: true }] : []),
                 { label: "Convert to Quotation", icon: "file-earmark-text", onClick: () => toQuotation(id) },
+                ...(o.status !== "Cancelled" ? [{ label: "Edit Order", icon: "pencil-square", href: "add-order.php?edit=" + id }] : []),
                 { label: "Delete Order", icon: "trash3", tone: "danger", onClick: () => rowAction("delete", id) }
             ]
         });

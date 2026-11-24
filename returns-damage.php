@@ -44,8 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         returnDamageResponse(['success' => true, 'returns' => returns_all()]);
     }
 
-    /* CREATE NEW RETURN REQUEST */
-    if ($action === 'create_return') {
+    /* Check the form of a new / edited return. Returns [order number, date, notes, clean products, damaged?]. */
+    $readReturnForm = function () use ($returnReasons): array {
         $orderNumber = trim($_POST['order_id'] ?? '');
         $date = trim($_POST['date'] ?? '');
         $notes = mb_substr(trim($_POST['notes'] ?? ''), 0, 2000);
@@ -71,11 +71,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $damaged = $damaged || $reason === 'damaged';
             $clean[] = ['product_id' => $pid, 'name' => $name, 'quantity' => $qty, 'reason' => $reason];
         }
+        return [mb_substr($orderNumber, 0, 30), $date, $notes, $clean, $damaged];
+    };
+
+    /* Good (not damaged) items put back into / taken out of stock. $sign = +1 or -1. */
+    $moveGoodStock = function (array $products, int $sign): void {
+        foreach ($products as $p) {
+            if (($p['reason'] ?? '') !== 'damaged' && !empty($p['product_id'])) {
+                db_exec('UPDATE products SET stock = stock + ? WHERE id = ?', [$sign * (float)$p['quantity'], (int)$p['product_id']]);
+            }
+        }
+    };
+
+    /* CREATE NEW RETURN REQUEST */
+    if ($action === 'create_return') {
+        [$orderNumber, $date, $notes, $clean, $damaged] = $readReturnForm();
 
         $returnId = next_number('returns_damage', 'return_id', 'RET-');
         db_insert('returns_damage', [
             'return_id' => $returnId,
-            'order_id' => mb_substr($orderNumber, 0, 30) ?: null,
+            'order_id' => $orderNumber ?: null,
             'date' => $date,
             'status' => 'Return Requested',
             'notes' => $notes ?: null,
@@ -88,6 +103,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         returnDamageResponse([
             'success' => true,
             'message' => "Return $returnId created successfully.",
+            'returns' => returns_all()
+        ]);
+    }
+
+    /* EDIT A RETURN (approved returns: stock is corrected to the new products) */
+    if ($action === 'update_return') {
+        $id = (int)($_POST['id'] ?? 0);
+        $record = db_one('SELECT * FROM returns_damage WHERE id = ?', [$id]);
+        if (!$record) {
+            returnDamageResponse(['success' => false, 'message' => 'Return not found.'], 404);
+        }
+        [$orderNumber, $date, $notes, $clean, $damaged] = $readReturnForm();
+
+        $pdo = db();
+        $pdo->beginTransaction();
+        $restock = $record['status'] === 'Return Approved' && (int)$record['stock_adjusted'] === 1;
+        if ($restock) {
+            // Undo what the old products put back, then put back the new ones.
+            $moveGoodStock(json_decode($record['products'] ?? '[]', true) ?: [], -1);
+            $moveGoodStock($clean, +1);
+        }
+        db_update('returns_damage', [
+            'order_id' => $orderNumber ?: null,
+            'date' => $date,
+            'notes' => $notes ?: null,
+            'damage_tagged' => $damaged ? 1 : 0,
+            'products' => json_encode($clean),
+        ], $id);
+        $pdo->commit();
+        log_activity('Returns', "Return {$record['return_id']} updated");
+
+        returnDamageResponse([
+            'success' => true,
+            'message' => "Return {$record['return_id']} updated" . ($restock ? '. Stock corrected.' : '.'),
             'returns' => returns_all()
         ]);
     }
@@ -452,6 +501,10 @@ include 'header.php';
                                     Status
                                 </th>
 
+                                <th class="text-center">
+                                    Action
+                                </th>
+
                             </tr>
 
                         </thead>
@@ -540,6 +593,7 @@ include 'header.php';
                     <textarea class="form-control" id="newReturnNotes" rows="3" maxlength="2000"></textarea>
                 </div>
 
+                <div class="alert alert-info d-none mt-3 mb-0 small" id="editReturnNote"><i class="bi bi-info-circle"></i> This return is already approved. Saving corrects the stock: old good items are taken back out and the new ones are put back in.</div>
                 <div class="alert alert-danger d-none mt-3 mb-0" id="newReturnError"></div>
             </div>
             <div class="modal-footer">
@@ -747,7 +801,7 @@ include 'header.php';
 
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="6" class="rd-empty">
+                    <td colspan="7" class="rd-empty">
                         No return or damage records found.
                     </td>
                 </tr>
@@ -813,6 +867,12 @@ include 'header.php';
                         ${escapeHTML(record.status)}
                     </span>
 
+                </td>
+
+                <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-light border" data-edit-return="${record.id}" title="Edit Return">
+                        <i class="bi bi-pencil-square text-primary"></i>
+                    </button>
                 </td>
             `;
 
@@ -928,6 +988,10 @@ include 'header.php';
             <div class="rd-product-list">
                 ${productsHTML}
             </div>
+
+            <button type="button" class="btn btn-outline-primary w-100 mb-2 fw-semibold" data-edit-return="${record.id}" title="Edit Return">
+                <i class="bi bi-pencil-square me-1"></i> Edit Return
+            </button>
 
             <!-- ACTION BUTTONS -->
             <button type="button"
@@ -1358,11 +1422,53 @@ include 'header.php';
         }
     });
 
+    // null = new return; a record = editing that return.
+    let editingReturn = null;
+
+    function addReturnItemWith(p) {
+        addReturnItem();
+        const row = itemsBox.lastElementChild;
+        const sel = row.querySelector(".return-product");
+        // Keep a product that is no longer in the list selectable.
+        if (p.product_id && ![...sel.options].some(o => Number(o.value) === Number(p.product_id))) {
+            sel.add(new Option(p.name || ("Product #" + p.product_id), p.product_id));
+        }
+        sel.value = String(p.product_id || "");
+        row.querySelector(".return-qty").value = p.quantity;
+        row.querySelector(".return-reason").value = p.reason || "other";
+    }
+
+    function openEditReturn(id) {
+        editingReturn = returns.find(r => Number(r.id) === Number(id)) || null;
+        if (!editingReturn) return;
+        bootstrap.Modal.getOrCreateInstance($("newReturnModal")).show();
+    }
+
+    // Edit buttons (table row + details panel).
+    document.addEventListener("click", event => {
+        const btn = event.target.closest("[data-edit-return]");
+        if (!btn) return;
+        event.stopPropagation();
+        openEditReturn(btn.dataset.editReturn);
+    }, true);
+
+    $("newReturnModal").addEventListener("hidden.bs.modal", () => { editingReturn = null; });
+
     $("newReturnModal").addEventListener("show.bs.modal", function () {
         $("newReturnForm").reset();
         itemsBox.innerHTML = "";
-        addReturnItem();
         $("newReturnError").classList.add("d-none");
+        const r = editingReturn;
+        $("newReturnTitle").textContent = r ? "Edit Return " + r.return_id : "New Return / Damage Request";
+        $("saveReturnBtn").textContent = r ? "Update Return" : "Save Return";
+        $("editReturnNote").classList.toggle("d-none", !(r && r.status === "Return Approved" && r.stock_adjusted));
+        if (r) {
+            $("newReturnOrder").value = r.order_id || "";
+            $("newReturnDate").value = r.date || "";
+            $("newReturnNotes").value = r.notes || "";
+            (r.products || []).forEach(addReturnItemWith);
+        }
+        if (!itemsBox.children.length) addReturnItem();
     });
 
     $("newReturnForm").addEventListener("submit", async function (event) {
@@ -1379,7 +1485,8 @@ include 'header.php';
         saveBtn.disabled = true;
 
         try {
-            const result = await sendRequest("create_return", {
+            const result = await sendRequest(editingReturn ? "update_return" : "create_return", {
+                id: editingReturn ? editingReturn.id : "",
                 order_id: $("newReturnOrder").value.trim(),
                 date: $("newReturnDate").value,
                 notes: $("newReturnNotes").value.trim(),
@@ -1387,7 +1494,7 @@ include 'header.php';
             });
 
             returns = result.returns;
-            selectedReturnId = returns.length ? Number(returns[0].id) : null;
+            selectedReturnId = editingReturn ? Number(editingReturn.id) : (returns.length ? Number(returns[0].id) : null);
             bootstrap.Modal.getOrCreateInstance($("newReturnModal")).hide();
             renderReturns();
             showMessage(result.message);

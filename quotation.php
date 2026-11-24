@@ -50,7 +50,7 @@ function quotations_all(bool $masterOnly = false): array
  * Quotation -> Order + Tax Invoice. Returns invoice id.
  * $advance = ['amount' => float, 'mode' => string, 'date' => Y-m-d] paid now (optional).
  */
-function quotation_to_invoice(int $id, array $dispatch, array $advance = []): int
+function quotation_to_invoice(int $id, array $dispatch, array $advance = [], bool $allowShort = false): int
 {
     $q = db_one('SELECT * FROM quotations WHERE id = ?', [$id]);
     $items = db_all('SELECT product_id, name, thickness, size, hsn, quantity, rate, tax, discount, amount
@@ -87,7 +87,7 @@ function quotation_to_invoice(int $id, array $dispatch, array $advance = []): in
             $invoiceNumber = $linked['invoice_number'];
             $orderId = (int)$linked['order_id'];
             if ($orderId && db_value('SELECT COUNT(*) FROM orders WHERE id = ?', [$orderId])) {
-                order_replace_items($orderId, $items);
+                order_replace_items($orderId, $items, !$allowShort);
                 db_update('orders', [
                     'customer_id' => $q['customer_id'],
                     'customer' => $q['customer'],
@@ -128,7 +128,7 @@ function quotation_to_invoice(int $id, array $dispatch, array $advance = []): in
                 'created_by' => (int)$_SESSION['user_id'],
             ] + $totals);
 
-            order_replace_items($orderId, $items);
+            order_replace_items($orderId, $items, !$allowShort);
 
             $invoiceId = db_insert('invoices', [
                 'invoice_number' => $invoiceNumber,
@@ -226,7 +226,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'eway_bill' => mb_substr(trim((string)($_POST['eway_bill'] ?? '')), 0, 50),
                 'vehicle_no' => mb_substr(strtoupper(trim((string)($_POST['vehicle_no'] ?? ''))), 0, 50),
                 'dispatched_through' => mb_substr(trim((string)($_POST['dispatched_through'] ?? '')), 0, 150),
-            ], $advance);
+            ], $advance, ($_POST['allow_short'] ?? '') === '1');
+        } catch (StockShortException $e) {
+            // The popup then offers "Convert anyway".
+            json_response(['success' => false, 'stock_short' => true, 'message' => $e->getMessage()], 409);
         } catch (Throwable $e) {
             json_response(['success' => false, 'message' => 'Unable to create invoice: ' . $e->getMessage()], 500);
         }
@@ -1280,6 +1283,9 @@ include 'header.php';
         invoiceModal.show();
     }
 
+    // "Convert anyway": the owner confirmed selling more than the stock.
+    let convertAllowShort = false;
+
     $("convertInvoiceForm").addEventListener("submit", async function (event) {
         event.preventDefault();
         const button = $("convertInvoiceSubmit");
@@ -1297,12 +1303,27 @@ include 'header.php';
         formData.append("advance_amount", $("convertAdvAmount").value || "0");
         formData.append("advance_mode", $("convertAdvMode").value);
         formData.append("advance_date", $("convertAdvDate").value);
+        formData.append("allow_short", convertAllowShort ? "1" : "0");
 
         try {
             const response = await fetch(window.location.pathname, {
                 method: "POST", body: formData, credentials: "same-origin"
             });
             const result = await response.json();
+            if (result.stock_short) {
+                // Not enough stock: explain, and let the owner convert anyway.
+                errorBox.innerHTML = `
+                    <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill"></i> ${escapeHTML(result.message)}</div>
+                    <div class="small mb-2">You can still convert this quotation. The stock of these products will go below 0 until you add stock in Products.</div>
+                    <button type="button" class="btn btn-sm btn-danger" id="convertAnywayBtn"><i class="bi bi-receipt"></i> Convert anyway</button>`;
+                errorBox.classList.remove("d-none");
+                $("convertAnywayBtn").addEventListener("click", () => {
+                    convertAllowShort = true;
+                    $("convertInvoiceForm").requestSubmit();
+                });
+                button.disabled = false;
+                return;
+            }
             if (!response.ok || !result.success) {
                 throw new Error(result.message || "Unable to create invoice.");
             }
@@ -1311,6 +1332,8 @@ include 'header.php';
             errorBox.textContent = error.message;
             errorBox.classList.remove("d-none");
             button.disabled = false;
+        } finally {
+            convertAllowShort = false;
         }
     });
 

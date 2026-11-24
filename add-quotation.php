@@ -63,6 +63,23 @@ foreach (db_all('SELECT id, name, thickness, size, hsn_code, price, tax_rate, st
 $salesmen = array_column(db_all('SELECT name FROM users WHERE enabled = 1 ORDER BY name'), 'name');
 $currentSalesman = $_SESSION['user_name'] ?? ($salesmen[0] ?? '');
 
+// Salesman / Reference can be typed by hand; earlier values are offered as suggestions.
+function pos_recent_values(string $column): array
+{
+    $values = [];
+    foreach (['quotations', 'orders'] as $table) {
+        $rows = db_all("SELECT `$column` AS v FROM `$table`
+                        WHERE `$column` IS NOT NULL AND `$column` <> ''
+                        GROUP BY `$column` ORDER BY MAX(id) DESC LIMIT 100");
+        $values = array_merge($values, array_column($rows, 'v'));
+    }
+    return $values;
+}
+$salesmanSuggestions = array_values(array_unique(array_merge($salesmen, pos_recent_values('salesman'))));
+$referenceSuggestions = array_values(array_unique(pos_recent_values('reference')));
+// Store choices come from the Stores page.
+$storeList = store_names();
+
 $today = date('Y-m-d');
 $validUpto = date('Y-m-d', strtotime('+30 days'));
 
@@ -76,6 +93,51 @@ if (!$isOrder && !empty($_GET['edit'])) {
         exit;
     }
 }
+/* Edit a saved order: add-order.php?edit=ID (stock is corrected on save). */
+$editOrder = null;
+if ($isOrder && !empty($_GET['edit']) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $editOrder = db_one('SELECT * FROM orders WHERE id = ?', [(int)$_GET['edit']]);
+    if (!$editOrder || $editOrder['status'] === 'Cancelled') {
+        header('Location: orders.php');
+        exit;
+    }
+    $orderLines = db_all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [(int)$editOrder['id']]);
+    // Lines typed by hand (services / custom items) can only be edited on the Direct Invoice screen.
+    if (array_filter($orderLines, fn($l) => empty($l['product_id']))) {
+        header('Location: ' . ($editOrder['invoice_id'] ? 'direct-invoice.php?edit=' . (int)$editOrder['invoice_id'] : 'orders.php'));
+        exit;
+    }
+    $prefill = [
+        'quotation_id' => 0,
+        'edit_id' => (int)$editOrder['id'],
+        'quotation_number' => $editOrder['order_number'],
+        'invoice_number' => $editOrder['invoice_id']
+            ? (string)db_value("SELECT invoice_number FROM invoices WHERE id = ? AND status <> 'Cancelled'", [(int)$editOrder['invoice_id']])
+            : '',
+        'customer_id' => (int)$editOrder['customer_id'],
+        'reference' => (string)$editOrder['reference'],
+        'date' => $editOrder['date'],
+        'valid_upto' => $editOrder['delivery_date'] ?: $editOrder['date'],
+        'salesman' => $editOrder['salesman'],
+        'store' => (string)($editOrder['store'] ?? ''),
+        'is_master' => false,
+        'region' => $editOrder['region'],
+        'notes' => $editOrder['notes'],
+        'items' => array_map(fn($i) => [
+            'product_id' => (int)$i['product_id'],
+            'name' => $i['name'],
+            'thickness' => $i['thickness'],
+            'size' => $i['size'],
+            'hsn' => $i['hsn'],
+            'quantity' => (float)$i['quantity'],
+            'rate' => (float)$i['rate'],
+            'tax' => (float)$i['tax'],
+            'discount' => (float)$i['discount'],
+            'amount' => (float)$i['amount'],
+        ], $orderLines),
+    ];
+}
+
 $sourceId = $isOrder ? (int)($_GET['quotation'] ?? 0) : (int)($editQuotation['id'] ?? 0);
 if ($sourceId && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $q = db_one('SELECT * FROM quotations WHERE id = ?', [$sourceId]);
@@ -89,6 +151,7 @@ if ($sourceId && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             'date' => $isOrder ? null : $q['date'],
             'valid_upto' => $isOrder ? null : $q['valid_upto'],
             'salesman' => $isOrder ? null : $q['salesman'],
+            'store' => (string)($q['store'] ?? ''),
             'is_master' => !$isOrder && (int)$q['is_master'] === 1,
             'region' => $q['region'],
             'notes' => $q['notes'],
@@ -194,6 +257,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $total = round($subtotal - $discountTotal + $taxTotal, 2);
     $salesman = mb_substr(trim((string)($payload['salesman'] ?? $currentSalesman)), 0, 150);
     $reference = mb_substr(trim((string)($payload['reference'] ?? '')), 0, 150);
+    // Store must be one saved on the Stores page (old disabled names are kept when editing).
+    $store = trim((string)($payload['store'] ?? ''));
+    if (!in_array($store, store_names(false), true)) {
+        $store = $storeList[0] ?? APP_STORE;
+    }
     $region = ($payload['region'] ?? '') === 'Outside AP' ? 'Outside AP' : 'Inside AP';
     $notes = mb_substr((string)($payload['notes'] ?? ''), 0, 5000);
 
@@ -201,7 +269,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->beginTransaction();
 
     try {
+        $orderEditId = $isOrder ? (int)($payload['edit_id'] ?? 0) : 0;
+        if ($orderEditId) {
+            /* ---- UPDATE a saved order (number stays the same; stock + invoice are corrected) ---- */
+            $existing = db_one('SELECT * FROM orders WHERE id = ? FOR UPDATE', [$orderEditId]);
+            if (!$existing) {
+                throw new RuntimeException('Order not found.');
+            }
+            if ($existing['status'] === 'Cancelled') {
+                throw new RuntimeException('This order is cancelled and cannot be edited.');
+            }
+            // Old lines go back to stock, new lines are taken (blocked if more than the stock).
+            order_replace_items($orderEditId, $savedItems);
+            $totals = [
+                'subtotal' => round($subtotal, 2),
+                'discount' => round($discountTotal, 2),
+                'tax' => round($taxTotal, 2),
+                'amount' => $total,
+            ];
+            db_update('orders', [
+                'date' => $date,
+                'delivery_date' => $valid,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'salesman' => $salesman,
+                'store' => $store,
+                'reference' => $reference ?: null,
+                'region' => $region,
+                'notes' => $notes,
+            ] + $totals, $orderEditId);
+
+            // Already invoiced: the invoice gets the new products and amount.
+            $invoice = $existing['invoice_id']
+                ? db_one("SELECT * FROM invoices WHERE id = ? AND status <> 'Cancelled'", [(int)$existing['invoice_id']])
+                : null;
+            if ($invoice) {
+                $paid = (float)db_value('SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice = ?', [$invoice['invoice_number']]);
+                if ($paid > $total + 0.009) {
+                    throw new RuntimeException('Invoice ' . $invoice['invoice_number'] . ' already has Rs ' . number_format($paid, 2)
+                        . ' paid, more than the new total. Remove a payment first.');
+                }
+                db_update('invoices', [
+                    'customer_id' => $customerId,
+                    'customer' => $customer['name'],
+                    'region' => $region,
+                ] + $totals, (int)$invoice['id']);
+                refresh_invoice_status($invoice['invoice_number']);
+            }
+
+            $pdo->commit();
+            log_activity('Orders', "Order {$existing['order_number']} updated for {$customer['name']} (Rs " . number_format($total, 2) . ')'
+                . ($invoice ? ", invoice {$invoice['invoice_number']} updated" : ''));
+
+            json_response([
+                'success' => true,
+                'quotation_id' => $existing['order_number'],
+                'redirect' => ($payload['mode'] ?? '') === 'generate'
+                    ? ($invoice ? 'invoice-print.php?id=' . (int)$invoice['id'] : 'orders.php?invoice=' . $orderEditId)
+                    : 'orders.php?updated=' . urlencode($existing['order_number'])
+            ]);
+        }
+
         if ($isOrder) {
+            // Never sell more than what is in stock (stock must not go below 0).
+            $short = stock_shortages($savedItems);
+            if ($short) {
+                $pdo->rollBack();
+                json_response(['success' => false, 'message' => 'Not enough stock: ' . implode(', ', $short) . '. Reduce the quantity.'], 422);
+            }
+
             // The order is saved on its own (stock is reserved now).
             // "Add to Invoice" / "Convert to Quotation" are on the Orders page.
             $orderNumber = next_number('orders', 'order_number', 'ORD-');
@@ -213,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'customer_id' => $customerId,
                 'customer' => $customer['name'],
                 'salesman' => $salesman,
-                'store' => APP_STORE,
+                'store' => $store,
                 'reference' => $reference ?: null,
                 'region' => $region,
                 'notes' => $notes,
@@ -266,6 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'customer_id' => $customerId,
                 'customer' => $customer['name'],
                 'salesman' => $salesman,
+                'store' => $store,
                 'reference' => $reference ?: null,
                 'region' => $region,
                 'notes' => $notes,
@@ -301,7 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'customer_id' => $customerId,
             'customer' => $customer['name'],
             'salesman' => $salesman,
-            'store' => APP_STORE,
+            'store' => $store,
             'reference' => $reference ?: null,
             'region' => $region,
             'notes' => $notes,
@@ -336,7 +473,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-if ($prefill && $prefill['edit_id']) {
+if ($prefill && $prefill['edit_id'] && $isOrder) {
+    $L['title'] = 'Edit Order ' . $prefill['quotation_number'];
+    $L['subtitle'] = $prefill['invoice_number']
+        ? 'Update this order. The order number stays the same; invoice ' . $prefill['invoice_number'] . ' and stock are updated too.'
+        : 'Update this order. The order number stays the same and stock is corrected.';
+    $L['save'] = 'Update Order';
+    $L['saveMaster'] = 'Update Order';
+    $L['saveGenerate'] = $prefill['invoice_number'] ? 'Update & Print Invoice' : 'Update & Add to Invoice';
+} elseif ($prefill && $prefill['edit_id']) {
     $L['title'] = 'Edit Quotation ' . $prefill['quotation_number'];
     $L['subtitle'] = 'Update this quotation. The quotation number stays the same.';
     $L['saveMaster'] = 'Update Quotation';
@@ -449,14 +594,19 @@ include 'header.php';
 
                         <i class="bi bi-person text-secondary me-2"></i>
 
-                        <select class="aq-info-select"
-                                id="salesman">
-                            <?php foreach ($salesmen as $sm): ?>
-                            <option value="<?php echo e($sm); ?>" <?php echo $sm === $currentSalesman ? 'selected' : ''; ?>>
-                                <?php echo e($sm); ?>
-                            </option>
+                        <!-- Type any name, or pick a saved one from the list -->
+                        <input type="text"
+                               class="aq-reference aq-type-input"
+                               id="salesman"
+                               list="salesmanList"
+                               maxlength="150"
+                               placeholder="Type or choose salesman"
+                               value="<?php echo e($currentSalesman); ?>">
+                        <datalist id="salesmanList">
+                            <?php foreach ($salesmanSuggestions as $sm): ?>
+                                <option value="<?php echo e($sm); ?>"></option>
                             <?php endforeach; ?>
-                        </select>
+                        </datalist>
 
                     </div>
 
@@ -477,25 +627,36 @@ include 'header.php';
                     <input type="text"
                            id="quotationReference"
                            class="aq-reference"
-                           placeholder="Enter reference"
+                           list="referenceList"
+                           placeholder="Type reference"
                            maxlength="150">
+                    <datalist id="referenceList">
+                        <?php foreach ($referenceSuggestions as $ref): ?>
+                            <option value="<?php echo e($ref); ?>"></option>
+                        <?php endforeach; ?>
+                    </datalist>
 
                 </div>
 
             </div>
 
-            <!-- STORE -->
+            <!-- STORE (from the Stores page) -->
             <div class="col-md-6 col-xl">
 
                 <div class="aq-info-item">
 
-                    <div class="aq-info-label">
+                    <label for="quotationStore" class="aq-info-label">
                         Store
-                    </div>
+                        <a href="stores.php" class="ms-1 small text-decoration-none" title="Manage stores"><i class="bi bi-gear"></i></a>
+                    </label>
 
-                    <div class="aq-info-value">
-                        <i class="bi bi-building"></i>
-                        <?php echo e(APP_STORE); ?>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-shop text-secondary me-2"></i>
+                        <select class="aq-info-select" id="quotationStore">
+                            <?php foreach ($storeList as $st): ?>
+                                <option value="<?php echo e($st); ?>"><?php echo e($st); ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
 
                 </div>
@@ -614,6 +775,17 @@ include 'header.php';
 
         </div>
 
+        <style>
+            /* Available stock column + out-of-stock labels */
+            .aq-stock{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:20px;padding:3px 10px;white-space:nowrap}
+            .aq-stock.ok{background:#e5f7ec;color:#0f7a3d}
+            .aq-stock.out{background:#fde8e8;color:#c2343c}
+            .aq-row-short td{background:#fff6f6 !important}
+            .aq-qty-short{border-color:#e0444c !important;color:#c2343c;font-weight:700;box-shadow:0 0 0 3px rgba(224,68,76,.12)}
+            .aq-pick-out{background:#fffafa}
+            .aq-pick-out[aria-disabled="true"]{opacity:.65;cursor:not-allowed}
+        </style>
+
         <!-- PRODUCTS TABLE -->
         <div class="table-responsive">
 
@@ -626,6 +798,7 @@ include 'header.php';
                         <th>Thickness</th>
                         <th>Size</th>
                         <th>HSN Code</th>
+                        <th>Available<br>Stock</th>
                         <th>Quantity</th>
                         <th>Rate</th>
                         <th>Tax</th>
@@ -822,6 +995,47 @@ include 'header.php';
 
     const $ = id => document.getElementById(id);
 
+    // Orders take stock, so they cannot use more than what is available.
+    // Quotations only show the stock (no stock is taken).
+    const isOrderMode = <?php echo $isOrder ? 'true' : 'false'; ?>;
+    const fmtQty = v => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    // Editing an order: its own quantities go back to stock on save, so they count as available.
+    const reservedQty = {};
+    if (isOrderMode && prefill && prefill.edit_id) {
+        prefill.items.forEach(it => {
+            if (it.product_id) reservedQty[it.product_id] = (reservedQty[it.product_id] || 0) + Number(it.quantity || 0);
+        });
+    }
+    function stockOf(productId) {
+        const p = products.find(x => Number(x.id) === Number(productId));
+        return p ? Number(p.stock) + (reservedQty[p.id] || 0) : null;
+    }
+    // Total quantity of one product across all lines.
+    function qtyInCart(productId) {
+        return quotationItems
+            .filter(i => Number(i.product_id) === Number(productId))
+            .reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+    }
+    function stockCellHTML(item) {
+        const stock = stockOf(item.product_id);
+        if (stock === null) return '<span class="text-muted">-</span>';
+        const want = qtyInCart(item.product_id);
+        if (stock <= 0) {
+            return `<span class="aq-stock out"><i class="bi bi-x-octagon-fill"></i> Out of stock</span>`;
+        }
+        if (want > stock) {
+            return `<span class="aq-stock out"><i class="bi bi-exclamation-triangle-fill"></i> Only ${fmtQty(stock)} available</span>`;
+        }
+        return `<span class="aq-stock ok">${fmtQty(stock)} available</span>`;
+    }
+    // Lines asking for more than the stock (used to block saving an order).
+    function shortItems() {
+        return quotationItems.filter(i => {
+            const s = stockOf(i.product_id);
+            return s !== null && qtyInCart(i.product_id) > s + 0.0001;
+        });
+    }
+
     let quotationItems = prefill ? prefill.items : [];
 
     if (prefill) {
@@ -831,11 +1045,15 @@ include 'header.php';
         if (prefill.date) $("quotationDate").value = prefill.date;
         if (prefill.valid_upto) $("validUpto").value = prefill.valid_upto;
         if (prefill.salesman) {
-            const sm = $("salesman");
-            if (![...sm.options].some(o => o.value === prefill.salesman)) {
-                sm.add(new Option(prefill.salesman, prefill.salesman));
+            $("salesman").value = prefill.salesman;
+        }
+        // Saved store (a store disabled later is still shown so it is not lost).
+        if (prefill.store) {
+            const st = $("quotationStore");
+            if (![...st.options].some(o => o.value === prefill.store)) {
+                st.add(new Option(prefill.store, prefill.store));
             }
-            sm.value = prefill.salesman;
+            st.value = prefill.store;
         }
     }
 
@@ -935,6 +1153,8 @@ include 'header.php';
 
                 <td>${escapeHTML(item.hsn)}</td>
 
+                <td class="aq-stock-cell">${stockCellHTML(item)}</td>
+
                 <td>
                     <input type="number"
                            class="aq-table-input"
@@ -1015,6 +1235,18 @@ include 'header.php';
                         quotationItems[index].amount
                     );
                 }
+
+                // Live stock check: red when the quantity is more than the stock.
+                const item = quotationItems[index];
+                const stockCell = row.querySelector(".aq-stock-cell");
+                if (stockCell && item) {
+                    stockCell.innerHTML = stockCellHTML(item);
+                    const s = stockOf(item.product_id);
+                    const short = s !== null && qtyInCart(item.product_id) > s + 0.0001;
+                    row.classList.toggle("aq-row-short", short);
+                    const qtyInput = row.querySelector('[data-field="quantity"]');
+                    if (qtyInput) qtyInput.classList.toggle("aq-qty-short", short);
+                }
             });
     }
 
@@ -1087,8 +1319,18 @@ include 'header.php';
             button.className =
                 "list-group-item list-group-item-action py-3";
 
+            const stock = stockOf(product.id) || 0;
+            const out = stock <= 0;
+            const blocked = out && isOrderMode;
+            const stockBadge = out
+                ? '<span class="aq-stock out"><i class="bi bi-x-octagon-fill"></i> Out of stock</span>'
+                : `<span class="aq-stock ok">${fmtQty(stock)} in stock</span>`;
+
+            if (out) button.classList.add("aq-pick-out");
+            if (blocked) button.setAttribute("aria-disabled", "true");
+
             button.innerHTML = `
-                <div class="d-flex justify-content-between gap-3">
+                <div class="d-flex justify-content-between align-items-center gap-3">
                     <div>
                         <strong>${escapeHTML(product.name)}</strong>
                         <div class="text-muted small mt-1">
@@ -1096,11 +1338,18 @@ include 'header.php';
                             | ${escapeHTML(product.size)}
                         </div>
                     </div>
-                    <strong>${formatMoney(product.rate)}</strong>
+                    <div class="text-end">
+                        <strong>${formatMoney(product.rate)}</strong>
+                        <div class="mt-1">${stockBadge}</div>
+                    </div>
                 </div>
             `;
 
             button.addEventListener("click", () => {
+                if (blocked) {
+                    App.toast(product.name + " is out of stock. Add stock in Products first.", "error");
+                    return;
+                }
                 addProduct(product.id);
             });
 
@@ -1220,7 +1469,7 @@ include 'header.php';
                 ["Quotation Date", $("quotationDate").value],
                 ["Valid Upto", $("validUpto").value],
                 ["Salesman", $("salesman").value],
-                ["Store", <?php echo json_encode(APP_STORE, json_flags()); ?>],
+                ["Store", $("quotationStore").value],
                 ["Region", $("quotationRegion").value],
                 ["Total Products", quotationItems.length],
                 ["Subtotal", formatMoney(totals.subtotal)],
@@ -1249,8 +1498,8 @@ include 'header.php';
 
         // While editing, "New" leaves edit mode and opens a blank quotation.
         if (prefill && prefill.edit_id) {
-            if (confirm("Leave this quotation without saving and start a new one?")) {
-                window.location.href = "add-quotation.php";
+            if (confirm("Leave without saving and start a new one?")) {
+                window.location.href = <?php echo json_encode($isOrder ? "add-order.php" : "add-quotation.php"); ?>;
             }
             return;
         }
@@ -1349,6 +1598,16 @@ include 'header.php';
             return;
         }
 
+        // Orders cannot use more than the available stock.
+        if (isOrderMode) {
+            const short = shortItems();
+            if (short.length) {
+                const names = [...new Set(short.map(i => `${i.name} (only ${fmtQty(stockOf(i.product_id))} available)`))];
+                showError("Not enough stock: " + names.join(", ") + ". Reduce the quantity.");
+                return;
+            }
+        }
+
         const invalidItem = quotationItems.some(item =>
             !Number.isFinite(item.quantity) ||
             item.quantity <= 0 ||
@@ -1369,9 +1628,9 @@ include 'header.php';
         const payload = {
             date: date,
             valid_upto: validUpto,
-            salesman: $("salesman").value,
+            salesman: $("salesman").value.trim(),
             reference: $("quotationReference").value.trim(),
-            store: <?php echo json_encode(APP_STORE, json_flags()); ?>,
+            store: $("quotationStore").value,
             region: $("quotationRegion").value,
             customer_id: Number($("customerSelect").value),
             from_quotation: prefill ? prefill.quotation_id : 0,

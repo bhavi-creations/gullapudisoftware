@@ -24,7 +24,7 @@ $viewOnly = ['dashboard', 'reports', 'tally'];
 $groups = [
     'Overview'  => ['dashboard', 'reports'],
     'Sales'     => ['quotations', 'master_quotations', 'orders', 'invoices', 'direct_invoice', 'payments', 'returns'],
-    'Catalogue' => ['products', 'categories', 'taxes'],
+    'Catalogue' => ['products', 'categories', 'stores', 'taxes'],
     'People'    => ['customers', 'employees'],
     'Tools'     => ['tally', 'whatsapp', 'backup'],
 ];

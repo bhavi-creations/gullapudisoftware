@@ -6,10 +6,8 @@
  */
 require_once __DIR__ . '/includes/init.php';
 
-$stores = [
-    'Gullapudi Shop',
-    'Gullapudi Godown'
-];
+// Store choices come from the Stores page (sidebar > Stock > Stores).
+$stores = store_names();
 
 // Categories in tree order; option value = full label, e.g. "Plywood › 18mm Ply".
 $categoryRows = category_tree(true);
@@ -152,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $vPrice = trim((string)($_POST['variant_price'][$i] ?? ''));
                 $vStock = trim((string)($_POST['variant_stock'][$i] ?? ''));
                 $vHsn = mb_substr(trim((string)($_POST['variant_hsn'][$i] ?? '')), 0, 50);
+                $vSize = mb_substr(trim((string)($_POST['variant_size'][$i] ?? '')), 0, 50);
                 if (($vPrice !== '' && (!is_numeric($vPrice) || (float)$vPrice < 0)) ||
                     ($vStock !== '' && (!is_numeric($vStock) || (float)$vStock < 0))) {
                     $errors[] = "Enter a valid price and stock for thickness $t.";
@@ -174,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // New thicknesses added while editing start at 0 stock unless typed.
                     'stock' => $vStock === '' ? ($editing && !$isCurrent ? 0 : $product['stock']) : (float)$vStock,
                     'hsn_code' => $vHsn !== '' ? $vHsn : $product['hsn_code'],
+                    'size' => $vSize !== '' ? $vSize : $product['size'],
                 ]);
                 if ($isCurrent) {
                     $currentRow = $row;
@@ -238,6 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'price' => (string)($_POST['variant_price'][$i] ?? ''),
             'stock' => (string)($_POST['variant_stock'][$i] ?? ''),
             'hsn' => (string)($_POST['variant_hsn'][$i] ?? ''),
+            'size' => (string)($_POST['variant_size'][$i] ?? ''),
             'current' => ($_POST['variant_current'][$i] ?? '0') === '1',
         ], array_keys((array)($_POST['variant_thickness'] ?? []))),
     ];
@@ -377,6 +378,73 @@ include 'header.php';
                                 </span>
 
                             </label>
+                        </div>
+
+                        <!-- CATEGORY -->
+                        <div class="ap-field">
+
+                            <label for="mainCategory"
+                                   class="ap-label">
+                                Category
+                            </label>
+
+                            <!-- Step 1: main category, Step 2: its sub-categories -->
+                            <div class="ap-input-wrapper">
+                                <i class="bi bi-grid-fill ap-input-icon"></i>
+                                <select class="ap-select" id="mainCategory">
+                                    <option value="">Select category</option>
+                                    <?php foreach ($categoryRows as $category): if ($category['depth'] !== 0) continue; ?>
+                                        <option value="<?php echo (int)$category['id']; ?>"><?php echo e($category['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- SUB-CATEGORY -->
+                        <div class="ap-field" id="subCategoryField">
+
+                            <label for="subCategory" class="ap-label">
+                                Sub-Category
+                                <span class="ap-sub-count" id="subCategoryCount"></span>
+                            </label>
+
+                            <div class="ap-input-wrapper">
+                                <i class="bi bi-diagram-3-fill ap-input-icon"></i>
+                                <select class="ap-select" id="subCategory" disabled>
+                                    <option value="">Select category first</option>
+                                </select>
+                            </div>
+                            <small class="ap-cat-path" id="categoryPath"></small>
+
+                            <style>
+                                .add-product-section .ap-sub-count{font-weight:600;font-size:12px;color:#0f5fcc;background:#e8f1ff;border-radius:10px;padding:1px 8px;margin-left:6px}
+                                .add-product-section .ap-sub-count:empty{display:none}
+                                .add-product-section .ap-cat-path{display:block;margin-top:6px;font-size:12.5px;color:#0f7a3d}
+                                .add-product-section .ap-cat-path:empty{display:none}
+                                .add-product-section #subCategory:disabled{background:#f4f6fa;color:#94a3b8}
+                            </style>
+
+                            <div class="ap-input-wrapper d-none" id="categoryFallback">
+
+                                <i class="bi bi-chevron-down ap-input-icon"></i>
+
+                                <select class="ap-select"
+                                        id="productCategory"
+                                        name="category">
+
+                                    <option value="">
+                                        Select category
+                                    </option>
+
+                                    <?php foreach ($categoryRows as $category): ?>
+                                        <option value="<?php echo e($category['label']); ?>">
+                                            <?php echo str_repeat('&nbsp;&nbsp;&nbsp;', $category['depth']) . e($category['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+
+                                </select>
+
+                            </div>
                         </div>
 
                         <!-- PRODUCT NAME -->
@@ -561,10 +629,9 @@ include 'header.php';
                 .tv-panel-count:empty{display:none}
                 .tv-hint{display:block;margin-top:4px;font-size:12px;color:#0f7a3d;font-weight:600}
                 @media (max-width:767px){
-                    .tv-table tr:not(.tv-empty){grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) 36px !important}
-                    .tv-table td:nth-child(1){order:1}.tv-table td:nth-child(4){order:2}.tv-table td:nth-child(5){order:3}.tv-table td:nth-child(6){order:4}
-                    .tv-table td:nth-child(3){order:6;grid-column:1/-1}
-                    .tv-table td:nth-child(2){order:5;grid-column:1/-1}
+                    .tv-table tr:not(.tv-empty){grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important}
+                    .tv-table td:nth-child(3){grid-column:1/-1}
+                    .tv-table td.tv-act{grid-column:1/-1}
                 }
                 .tv-entry{display:flex;gap:8px;flex-wrap:wrap}
                 .tv-chips{flex:1 1 220px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:46px;border:1px solid #dfe6ef;border-radius:9px;background:#fff;padding:6px 10px}
@@ -594,7 +661,7 @@ include 'header.php';
                 /* Each thickness = a small card: Thickness / Price / Stock on top, full-width name below. */
                 .tv-table thead{display:none}
                 .tv-table,.tv-table tbody{display:block;width:100%}
-                .tv-table tr:not(.tv-empty){display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;align-items:end;gap:8px;background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px;margin-bottom:8px}
+                .tv-table tr:not(.tv-empty){display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,.9fr) minmax(0,2fr) minmax(0,.9fr) minmax(0,.9fr) minmax(0,.9fr) 36px;align-items:end;gap:8px;background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px;margin-bottom:8px}
                 .tv-table tr.tv-current{border-color:#9fd9b6}
                 .tv-table tr.tv-empty{display:block}
                 .tv-table tr.tv-empty td{display:block}
@@ -716,73 +783,6 @@ include 'header.php';
                                     <?php foreach ($stores as $store): ?>
                                         <option value="<?php echo htmlspecialchars($store); ?>">
                                             <?php echo htmlspecialchars($store); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-
-                                </select>
-
-                            </div>
-                        </div>
-
-                        <!-- CATEGORY -->
-                        <div class="ap-field">
-
-                            <label for="mainCategory"
-                                   class="ap-label">
-                                Category
-                            </label>
-
-                            <!-- Step 1: main category, Step 2: its sub-categories -->
-                            <div class="ap-input-wrapper">
-                                <i class="bi bi-grid-fill ap-input-icon"></i>
-                                <select class="ap-select" id="mainCategory">
-                                    <option value="">Select category</option>
-                                    <?php foreach ($categoryRows as $category): if ($category['depth'] !== 0) continue; ?>
-                                        <option value="<?php echo (int)$category['id']; ?>"><?php echo e($category['name']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- SUB-CATEGORY -->
-                        <div class="ap-field" id="subCategoryField">
-
-                            <label for="subCategory" class="ap-label">
-                                Sub-Category
-                                <span class="ap-sub-count" id="subCategoryCount"></span>
-                            </label>
-
-                            <div class="ap-input-wrapper">
-                                <i class="bi bi-diagram-3-fill ap-input-icon"></i>
-                                <select class="ap-select" id="subCategory" disabled>
-                                    <option value="">Select category first</option>
-                                </select>
-                            </div>
-                            <small class="ap-cat-path" id="categoryPath"></small>
-
-                            <style>
-                                .add-product-section .ap-sub-count{font-weight:600;font-size:12px;color:#0f5fcc;background:#e8f1ff;border-radius:10px;padding:1px 8px;margin-left:6px}
-                                .add-product-section .ap-sub-count:empty{display:none}
-                                .add-product-section .ap-cat-path{display:block;margin-top:6px;font-size:12.5px;color:#0f7a3d}
-                                .add-product-section .ap-cat-path:empty{display:none}
-                                .add-product-section #subCategory:disabled{background:#f4f6fa;color:#94a3b8}
-                            </style>
-
-                            <div class="ap-input-wrapper d-none" id="categoryFallback">
-
-                                <i class="bi bi-chevron-down ap-input-icon"></i>
-
-                                <select class="ap-select"
-                                        id="productCategory"
-                                        name="category">
-
-                                    <option value="">
-                                        Select category
-                                    </option>
-
-                                    <?php foreach ($categoryRows as $category): ?>
-                                        <option value="<?php echo e($category['label']); ?>">
-                                            <?php echo str_repeat('&nbsp;&nbsp;&nbsp;', $category['depth']) . e($category['name']); ?>
                                         </option>
                                     <?php endforeach; ?>
 
@@ -1267,6 +1267,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const priceInput = document.getElementById("productPrice");
         const stockInput = document.getElementById("productStock");
         const hsnInput = document.getElementById("hsnCode");
+        const sizeInput = document.getElementById("productSize");
         const thicknessInput = document.getElementById("thickness");
         const saveLabel = document.getElementById("saveProductBtn");
         const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1300,6 +1301,7 @@ document.addEventListener("DOMContentLoaded", function () {
             tr.innerHTML = `
                 <td data-label="Thickness"><input type="hidden" name="variant_current[]" value="${current ? "1" : "0"}">
                     <input class="tv-thk" name="variant_thickness[]" value="${esc(v.thickness || "")}" required></td>
+                <td data-label="Size"><input class="tv-size" name="variant_size[]" maxlength="50" value="${esc(v.size || "")}" placeholder="${esc(sizeInput.value || "e.g. 8x4")}"></td>
                 <td data-label="Product name"><input class="tv-name" name="variant_name[]" value="${esc(v.name || autoName(v.thickness || ""))}" maxlength="200">
                     ${current ? '<span class="tv-badge">This product &middot; updated</span>' : (isEdit ? '<span class="tv-badge new">New product</span>' : "")}</td>
                 <td data-label="HSN Code"><input class="tv-hsn" name="variant_hsn[]" maxlength="50" value="${esc(v.hsn || "")}" placeholder="${esc(hsnInput.value || "HSN")}"></td>
@@ -1414,6 +1416,10 @@ document.addEventListener("DOMContentLoaded", function () {
             tvRows.querySelectorAll("tr:not(.tv-empty)").forEach(tr => {
                 if (tr.dataset.auto) tr.querySelector(".tv-name").value = autoName(tr.querySelector(".tv-thk").value.trim());
             });
+        });
+        // Empty Size boxes show (and use) the Custom Size above.
+        sizeInput.addEventListener("input", () => {
+            tvRows.querySelectorAll(".tv-size").forEach(i => i.placeholder = sizeInput.value || "e.g. 8x4");
         });
         // Empty HSN boxes show (and use) the HSN Code above.
         hsnInput.addEventListener("input", () => {

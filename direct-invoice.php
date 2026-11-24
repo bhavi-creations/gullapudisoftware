@@ -534,6 +534,11 @@ include 'header.php';
 .direct-invoice-section .di-items .num { text-align: right; }
 .direct-invoice-section .di-line-no { color: #94a3b8; font-weight: 700; text-align: center; width: 36px; }
 .direct-invoice-section .di-line-meta { font-size: 11.5px; color: #8a97a8; margin-top: 3px; min-height: 14px; }
+.direct-invoice-section .di-stock-out { display:inline-flex; align-items:center; gap:4px; color:#c2343c; background:#fde8e8; font-weight:700; border-radius:20px; padding:1px 8px; }
+.direct-invoice-section .di-stock-ok { color:#0f7a3d; font-weight:700; }
+.direct-invoice-section .di-items tr.di-row-short td, .direct-invoice-section .di-items tr.di-row-out td { background:#fff6f6; }
+.direct-invoice-section .di-items .di-input.di-qty-short { border-color:#e0444c !important; color:#c2343c; font-weight:700; box-shadow:0 0 0 3px rgba(224,68,76,.12); }
+.direct-invoice-section .di-items tr.di-row-out .di-input:disabled { background:#f6eded; color:#a88; cursor:not-allowed; }
 .direct-invoice-section .di-line-amount { font-weight: 750; text-align: right; white-space: nowrap; }
 .direct-invoice-section .di-remove { border: 0; background: transparent; color: #ef4444; font-size: 16px; padding: 4px 6px; }
 .direct-invoice-section .di-remove:hover { color: #b91c1c; }
@@ -795,7 +800,7 @@ include 'header.php';
 
             <datalist id="diProducts">
                 <?php foreach (array_filter($products, fn($p) => $p["enabled"]) as $p): ?>
-                    <option value="<?php echo e($p['name']); ?>"></option>
+                    <option value="<?php echo e($p['name']); ?>" label="<?php echo $p['stock'] <= 0 ? 'Out of stock' : e('Stock: ' . rtrim(rtrim(number_format((float)$p['stock'], 2, '.', ''), '0'), '.')); ?>"></option>
                 <?php endforeach; ?>
             </datalist>
             <datalist id="diServices">
@@ -1003,16 +1008,69 @@ include 'header.php';
             field(tr, "hsn").value = p.hsn || "";
             field(tr, "rate").value = p.rate;
             setTax(tr, p.tax);
-            const bits = [p.thickness, p.size, p.unit].filter(Boolean).join(" · ");
-            meta.innerHTML = (bits ? esc(bits) + " · " : "") +
-                `<span class="${p.stock <= 0 ? "text-danger" : ""}">Stock: ${esc(p.stock)}</span>`;
+            // Stock text is filled by checkStock() (it also counts other lines of the same product).
+            meta.innerHTML = "";
         } else {
             tr.dataset.productId = "";
             meta.textContent = field(tr, "name").value.trim() ? "Custom line (no stock change)" : "";
         }
     }
 
+    /* ---- Stock check: quantity can never be more than the stock ---- */
+    const productById = new Map(products.map(p => [Number(p.id), p]));
+    // Editing: this invoice's own quantities go back to stock first, so they count as available.
+    const reservedQty = {};
+    (editInvoice ? editInvoice.items : []).forEach(it => {
+        if (it.product_id) reservedQty[it.product_id] = (reservedQty[it.product_id] || 0) + Number(it.quantity || 0);
+    });
+    const fmtQty = v => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    function availableFor(pid) {
+        const p = productById.get(Number(pid));
+        return p ? Number(p.stock) + (reservedQty[pid] || 0) : Infinity;
+    }
+    function productRows() {
+        return [...lines.rows].filter(tr => tr.dataset.type === "product" && tr.dataset.productId);
+    }
+    // Marks each product line: out of stock (locked), more than stock (red) or OK. Returns problem messages.
+    function checkStock() {
+        const want = {};
+        productRows().forEach(tr => {
+            const pid = tr.dataset.productId;
+            want[pid] = (want[pid] || 0) + num(field(tr, "quantity").value);
+        });
+        const problems = [];
+        [...lines.rows].forEach(tr => {
+            const pid = tr.dataset.type === "product" ? tr.dataset.productId : "";
+            const p = pid ? productById.get(Number(pid)) : null;
+            const qtyInput = field(tr, "quantity");
+            let out = false, short = false;
+            if (p) {
+                const have = availableFor(pid);
+                out = have <= 0;
+                short = !out && want[pid] > have + 0.0001;
+                const bits = [p.thickness, p.size, p.unit].filter(Boolean).join(" · ");
+                const stockText = out
+                    ? '<span class="di-stock-out"><i class="bi bi-x-octagon-fill"></i> Out of stock</span>'
+                    : short
+                        ? `<span class="di-stock-out"><i class="bi bi-exclamation-triangle-fill"></i> Only ${fmtQty(have)} available</span>`
+                        : `<span class="di-stock-ok">Stock: ${fmtQty(have)}</span>`;
+                field(tr, "meta").innerHTML = (bits ? esc(bits) + " · " : "") + stockText;
+                if (out) problems.push(`${p.name} is out of stock`);
+                else if (short) problems.push(`${p.name} (only ${fmtQty(have)} available)`);
+            }
+            tr.classList.toggle("di-row-out", out);
+            tr.classList.toggle("di-row-short", short);
+            qtyInput.classList.toggle("di-qty-short", short);
+            // Out of stock: nothing on this line can be changed - remove it with the X button.
+            tr.querySelectorAll(".di-input").forEach(inp => { inp.disabled = out; });
+            if (out) tr.title = "Out of stock - remove this line or add stock in Products.";
+            else tr.removeAttribute("title");
+        });
+        return [...new Set(problems)];
+    }
+
     function recalc() {
+        checkStock();
         let sub = 0, disc = 0, tax = 0;
         [...lines.rows].forEach(tr => {
             const base = num(field(tr, "quantity").value) * num(field(tr, "rate").value);
@@ -1136,6 +1194,10 @@ include 'header.php';
             return showError('Please select a customer, or click "New Customer" to type one.');
         }
         if (!items.length) return showError("Add at least one item line.");
+        const stockProblems = checkStock();
+        if (stockProblems.length) {
+            return showError("Not enough stock: " + stockProblems.join(", ") + ". Reduce the quantity or remove the line.");
+        }
 
         const buttons = [$("diSave"), $("diSavePrint")];
         buttons.forEach(b => b.disabled = true);
