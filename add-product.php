@@ -22,6 +22,17 @@ $productTypes = [
 // GST rates from the Taxes page (id => row). Inside state = CGST + SGST, outside = IGST.
 $gstRates = array_column(gst_rates(true), null, 'id');
 
+// Sheets already saved (for the Custom Thickness dropdown: thickness -> price + available qty).
+$sheetRows = array_map(fn($p) => [
+    'id' => (int)$p['id'],
+    'name' => $p['name'],
+    'thickness' => (string)$p['thickness'],
+    'price' => (float)$p['price'],
+    'stock' => (float)$p['stock'],
+    'category_id' => $p['category_id'] === null ? null : (int)$p['category_id'],
+    'enabled' => (bool)$p['enabled'],
+], db_all('SELECT id, name, thickness, price, stock, category_id, enabled FROM products ORDER BY name'));
+
 $errors = [];
 $success = '';
 $editId = (int)($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -460,15 +471,26 @@ include 'header.php';
                             </div>
                         </div>
 
-                        <!-- CUSTOM THICKNESS -->
+                        <!-- CUSTOM THICKNESS: sheets already saved in the chosen (sub-)category -->
                         <div class="ap-field">
 
-                            <label for="thickness"
+                            <label for="thicknessPick"
                                    class="ap-label">
                                 Custom Thickness
+                                <span class="ap-sub-count" id="thicknessCount"></span>
                             </label>
 
                             <div class="ap-input-wrapper">
+                                <i class="bi bi-layers-fill ap-input-icon"></i>
+                                <select class="ap-select" id="thicknessPick" disabled>
+                                    <option value="">Select sub-category first</option>
+                                </select>
+                            </div>
+
+                            <!-- Price + available quantity of the chosen sheet -->
+                            <div class="thk-info" id="thicknessInfo" hidden></div>
+
+                            <div class="ap-input-wrapper mt-2" id="thicknessTypeWrap">
 
                                 <i class="bi bi-rulers ap-input-icon"></i>
 
@@ -480,7 +502,103 @@ include 'header.php';
                                        value="<?php echo old('thickness'); ?>">
 
                             </div>
+
+                            <style>
+                                .add-product-section .thk-info{margin-top:10px;border:1px solid #cfe0fb;background:#f5f9ff;border-radius:10px;padding:12px 14px}
+                                .add-product-section .thk-info .thk-name{font-weight:700;color:#1d2f4a;font-size:14px;display:flex;align-items:center;gap:8px}
+                                .add-product-section .thk-info .thk-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+                                .add-product-section .thk-info .thk-stat{background:#fff;border:1px solid #e3eaf4;border-radius:8px;padding:8px 10px}
+                                .add-product-section .thk-info .thk-stat span{display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7c95;letter-spacing:.03em}
+                                .add-product-section .thk-info .thk-stat strong{font-size:16px;color:#1d2f4a}
+                                .add-product-section .thk-info .thk-stat.ok strong{color:#0f7a3d}
+                                .add-product-section .thk-info .thk-stat.low strong{color:#c2343c}
+                                .add-product-section .thk-info .thk-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+                                .add-product-section .thk-info .thk-actions a,.add-product-section .thk-info .thk-actions button{font-size:12.5px;font-weight:600;border-radius:8px;padding:6px 12px;border:1px solid #1479ff;color:#1479ff;background:#fff;text-decoration:none}
+                                .add-product-section .thk-info .thk-actions a{background:#1479ff;color:#fff}
+                                .add-product-section .thk-info .thk-warn{margin-top:8px;font-size:12.5px;color:#a15c00}
+                            </style>
                         </div>
+
+            <!-- MULTIPLE THICKNESSES (add + edit) -->
+            <div class="ap-field">
+                <div class="tv-box" id="tvBox">
+                    <label class="tv-toggle">
+                        <input type="checkbox" id="useVariants" name="use_variants" value="1">
+                        <span class="tv-switch"></span>
+                        <span>
+                            <?php if ($editing): ?>
+                            <strong>Add more thicknesses of this product</strong>
+                            <small>This product stays as the first row (updated). Every other thickness is created as a new product with the same details.</small>
+                            <?php else: ?>
+                            <strong>Add multiple thicknesses at once</strong>
+                            <small>Example: Marine Plywood in 6, 9, 12, 18, 19 mm &mdash; one product is created for each thickness.</small>
+                            <?php endif; ?>
+                            <a href="#tvBody" class="tv-hint" id="tvHint" hidden><i class="bi bi-arrow-down-circle-fill"></i> Enter the thicknesses at the bottom, under Additional Information</a>
+                        </span>
+                    </label>
+
+                </div>
+            </div>
+            <style>
+                .tv-box{border:1px dashed #b9cdf0;border-radius:12px;background:#f7faff;padding:16px 18px}
+                .tv-toggle{display:flex;gap:12px;align-items:center;cursor:pointer;margin:0}
+                .tv-toggle input{display:none}
+                .tv-toggle strong{display:block;font-size:14px;color:#1d2f4a}
+                .tv-toggle small{color:#6b7c95;font-size:12.5px}
+                .tv-switch{flex:0 0 42px;height:24px;border-radius:12px;background:#cdd6e3;position:relative;transition:.2s}
+                .tv-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+                .tv-toggle input:checked + .tv-switch{background:#1479ff}
+                .tv-toggle input:checked + .tv-switch::after{left:21px}
+                .tv-panel{border:1px solid #b9cdf0;border-radius:12px;background:#f7faff;padding:18px 20px}
+                .tv-panel-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+                .tv-panel-head h3{font-size:15px;font-weight:700;color:#1d2f4a;margin:0}
+                .tv-panel-head p{font-size:12.5px;color:#6b7c95;margin:0}
+                .tv-panel-icon{width:38px;height:38px;border-radius:10px;background:#e8f1ff;color:#1479ff;display:grid;place-items:center;font-size:17px}
+                .tv-panel-count{margin-left:auto;font-size:12.5px;font-weight:700;color:#0f5fcc;background:#e8f1ff;border-radius:20px;padding:4px 12px}
+                .tv-panel-count:empty{display:none}
+                .tv-hint{display:block;margin-top:4px;font-size:12px;color:#0f7a3d;font-weight:600}
+                @media (max-width:767px){
+                    .tv-table tr:not(.tv-empty){grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) 36px !important}
+                    .tv-table td:nth-child(1){order:1}.tv-table td:nth-child(3){order:2}.tv-table td:nth-child(4){order:3}.tv-table td:nth-child(5){order:4}
+                    .tv-table td:nth-child(2){order:5;grid-column:1/-1}
+                }
+                .tv-entry{display:flex;gap:8px;flex-wrap:wrap}
+                .tv-chips{flex:1 1 220px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:46px;border:1px solid #dfe6ef;border-radius:9px;background:#fff;padding:6px 10px}
+                .tv-chips input{flex:1;min-width:120px;border:0;outline:0;font-size:14px;background:transparent}
+                .tv-chip{background:#e8f1ff;color:#0f5fcc;border-radius:20px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+                .tv-chip button{border:0;background:transparent;color:#0f5fcc;line-height:1;padding:0 3px;font-size:15px}
+                .tv-unit{height:46px;border:1px solid #dfe6ef;border-radius:9px;padding:0 10px;background:#fff}
+                .tv-add{height:46px;border:0;border-radius:9px;background:#1479ff;color:#fff;padding:0 16px;font-weight:600}
+                .tv-quick{margin:10px 0 14px;font-size:12.5px;color:#6b7c95;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+                .tv-quick button{border:1px solid #d3deee;background:#fff;border-radius:20px;padding:3px 11px;font-size:12.5px;color:#2b4366}
+                .tv-quick button:hover{border-color:#1479ff;color:#1479ff}
+                .tv-quick .tv-clear{color:#c2343c;border-color:#f1c9cc}
+                .tv-table{width:100%;border-collapse:separate;border-spacing:0 6px}
+                .tv-table th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#6b7c95;padding:0 6px}
+                .tv-table td{padding:0 3px}
+                .tv-table th{padding:0 3px}
+                .tv-table td input{padding:6px 8px}
+                .tv-table td input{width:100%;height:40px;border:1px solid #dfe6ef;border-radius:8px;padding:6px 10px;font-size:14px;background:#fff}
+                .tv-table td input:focus{border-color:#1479ff;outline:0;box-shadow:0 0 0 3px rgba(20,121,255,.09)}
+                .tv-table .tv-thk{font-weight:700;color:#0f5fcc}
+                .tv-table .tv-del{border:0;background:#fff0f0;color:#c2343c;width:36px;height:36px;border-radius:8px}
+                .tv-table tr.tv-empty td{text-align:center;color:#94a3b8;padding:14px;border:1px dashed #dfe6ef;border-radius:8px}
+                .tv-badge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;color:#0f7a3d;background:#e5f7ec;border-radius:10px;padding:1px 8px}
+                .tv-badge.new{color:#0f5fcc;background:#e8f1ff}
+                .tv-table tr.tv-current td input{border-color:#9fd9b6;background:#f6fdf9}
+                .tv-note{font-size:12.5px;color:#6b7c95;margin:6px 0 0}
+                /* Each thickness = a small card: Thickness / Price / Stock on top, full-width name below. */
+                .tv-table thead{display:none}
+                .tv-table,.tv-table tbody{display:block;width:100%}
+                .tv-table tr:not(.tv-empty){display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,2.2fr) minmax(0,1fr) minmax(0,1fr) 36px;align-items:end;gap:8px;background:#fff;border:1px solid #e3eaf4;border-radius:10px;padding:10px;margin-bottom:8px}
+                .tv-table tr.tv-current{border-color:#9fd9b6}
+                .tv-table tr.tv-empty{display:block}
+                .tv-table tr.tv-empty td{display:block}
+                .tv-table tr:not(.tv-empty) td{padding:0;min-width:0}
+                .tv-table td[data-label]::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;color:#6b7c95;text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px}
+                .tv-table td.tv-act{align-self:end;display:flex;justify-content:flex-end}
+                .tv-table td.tv-act .tv-del{margin:0;flex:0 0 36px}
+            </style>
 
                         <!-- CUSTOM SIZE -->
                         <div class="ap-field">
@@ -605,12 +723,48 @@ include 'header.php';
                         <!-- CATEGORY -->
                         <div class="ap-field">
 
-                            <label for="productCategory"
+                            <label for="mainCategory"
                                    class="ap-label">
                                 Category
                             </label>
 
+                            <!-- Step 1: main category, Step 2: its sub-categories -->
                             <div class="ap-input-wrapper">
+                                <i class="bi bi-grid-fill ap-input-icon"></i>
+                                <select class="ap-select" id="mainCategory">
+                                    <option value="">Select category</option>
+                                    <?php foreach ($categoryRows as $category): if ($category['depth'] !== 0) continue; ?>
+                                        <option value="<?php echo (int)$category['id']; ?>"><?php echo e($category['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- SUB-CATEGORY -->
+                        <div class="ap-field" id="subCategoryField">
+
+                            <label for="subCategory" class="ap-label">
+                                Sub-Category
+                                <span class="ap-sub-count" id="subCategoryCount"></span>
+                            </label>
+
+                            <div class="ap-input-wrapper">
+                                <i class="bi bi-diagram-3-fill ap-input-icon"></i>
+                                <select class="ap-select" id="subCategory" disabled>
+                                    <option value="">Select category first</option>
+                                </select>
+                            </div>
+                            <small class="ap-cat-path" id="categoryPath"></small>
+
+                            <style>
+                                .add-product-section .ap-sub-count{font-weight:600;font-size:12px;color:#0f5fcc;background:#e8f1ff;border-radius:10px;padding:1px 8px;margin-left:6px}
+                                .add-product-section .ap-sub-count:empty{display:none}
+                                .add-product-section .ap-cat-path{display:block;margin-top:6px;font-size:12.5px;color:#0f7a3d}
+                                .add-product-section .ap-cat-path:empty{display:none}
+                                .add-product-section #subCategory:disabled{background:#f4f6fa;color:#94a3b8}
+                            </style>
+
+                            <div class="ap-input-wrapper d-none" id="categoryFallback">
 
                                 <i class="bi bi-chevron-down ap-input-icon"></i>
 
@@ -762,24 +916,17 @@ include 'header.php';
 
             </div>
 
-            <!-- MULTIPLE THICKNESSES (add + edit) -->
-            <div class="ap-card-body pt-0">
-                <div class="tv-box" id="tvBox">
-                    <label class="tv-toggle">
-                        <input type="checkbox" id="useVariants" name="use_variants" value="1">
-                        <span class="tv-switch"></span>
-                        <span>
-                            <?php if ($editing): ?>
-                            <strong>Add more thicknesses of this product</strong>
-                            <small>This product stays as the first row (updated). Every other thickness is created as a new product with the same details.</small>
-                            <?php else: ?>
-                            <strong>Add multiple thicknesses at once</strong>
-                            <small>Example: Marine Plywood in 6, 9, 12, 18, 19 mm &mdash; one product is created for each thickness.</small>
-                            <?php endif; ?>
-                        </span>
-                    </label>
 
-                    <div class="tv-body" id="tvBody" hidden>
+                    <div class="ap-card-body pt-0 tv-body" id="tvBody" hidden>
+                <div class="tv-panel">
+                    <div class="tv-panel-head">
+                        <span class="tv-panel-icon"><i class="bi bi-rulers"></i></span>
+                        <div>
+                            <h3>Thicknesses</h3>
+                            <p>One product is saved for each thickness below.</p>
+                        </div>
+                        <span class="tv-panel-count" id="tvCount"></span>
+                    </div>
                         <div class="tv-entry">
                             <div class="tv-chips" id="tvChips">
                                 <input type="text" id="tvInput" placeholder="Type thickness and press Enter (or 6, 9, 12, 18, 19)">
@@ -804,11 +951,11 @@ include 'header.php';
                             <table class="tv-table">
                                 <thead>
                                     <tr>
-                                        <th style="width:110px">Thickness</th>
+                                        <th style="width:22%">Thickness</th>
                                         <th>Product Name</th>
-                                        <th style="width:150px">Price</th>
-                                        <th style="width:150px">Stock</th>
-                                        <th style="width:44px"></th>
+                                        <th style="width:20%">Price</th>
+                                        <th style="width:20%">Stock</th>
+                                        <th style="width:40px"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="tvRows"></tbody>
@@ -817,42 +964,6 @@ include 'header.php';
                         <p class="tv-note" id="tvNote">Category, GST, HSN, size, unit and store above are copied to every thickness. <?php echo $editing ? "Empty price uses the price above; new thicknesses start with 0 stock unless you type it." : "Empty price / stock uses the values above."; ?></p>
                     </div>
                 </div>
-            </div>
-            <style>
-                .tv-box{border:1px dashed #b9cdf0;border-radius:12px;background:#f7faff;padding:16px 18px}
-                .tv-toggle{display:flex;gap:12px;align-items:center;cursor:pointer;margin:0}
-                .tv-toggle input{display:none}
-                .tv-toggle strong{display:block;font-size:14px;color:#1d2f4a}
-                .tv-toggle small{color:#6b7c95;font-size:12.5px}
-                .tv-switch{flex:0 0 42px;height:24px;border-radius:12px;background:#cdd6e3;position:relative;transition:.2s}
-                .tv-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
-                .tv-toggle input:checked + .tv-switch{background:#1479ff}
-                .tv-toggle input:checked + .tv-switch::after{left:21px}
-                .tv-body{margin-top:16px}
-                .tv-entry{display:flex;gap:8px;flex-wrap:wrap}
-                .tv-chips{flex:1 1 320px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:46px;border:1px solid #dfe6ef;border-radius:9px;background:#fff;padding:6px 10px}
-                .tv-chips input{flex:1;min-width:160px;border:0;outline:0;font-size:14px;background:transparent}
-                .tv-chip{background:#e8f1ff;color:#0f5fcc;border-radius:20px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
-                .tv-chip button{border:0;background:transparent;color:#0f5fcc;line-height:1;padding:0 3px;font-size:15px}
-                .tv-unit{height:46px;border:1px solid #dfe6ef;border-radius:9px;padding:0 10px;background:#fff}
-                .tv-add{height:46px;border:0;border-radius:9px;background:#1479ff;color:#fff;padding:0 16px;font-weight:600}
-                .tv-quick{margin:10px 0 14px;font-size:12.5px;color:#6b7c95;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-                .tv-quick button{border:1px solid #d3deee;background:#fff;border-radius:20px;padding:3px 11px;font-size:12.5px;color:#2b4366}
-                .tv-quick button:hover{border-color:#1479ff;color:#1479ff}
-                .tv-quick .tv-clear{color:#c2343c;border-color:#f1c9cc}
-                .tv-table{width:100%;border-collapse:separate;border-spacing:0 6px}
-                .tv-table th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#6b7c95;padding:0 6px}
-                .tv-table td{padding:0 6px}
-                .tv-table td input{width:100%;height:40px;border:1px solid #dfe6ef;border-radius:8px;padding:6px 10px;font-size:14px;background:#fff}
-                .tv-table td input:focus{border-color:#1479ff;outline:0;box-shadow:0 0 0 3px rgba(20,121,255,.09)}
-                .tv-table .tv-thk{font-weight:700;color:#0f5fcc}
-                .tv-table .tv-del{border:0;background:#fff0f0;color:#c2343c;width:36px;height:36px;border-radius:8px}
-                .tv-table tr.tv-empty td{text-align:center;color:#94a3b8;padding:14px;border:1px dashed #dfe6ef;border-radius:8px}
-                .tv-badge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;color:#0f7a3d;background:#e5f7ec;border-radius:10px;padding:1px 8px}
-                .tv-badge.new{color:#0f5fcc;background:#e8f1ff}
-                .tv-table tr.tv-current td input{border-color:#9fd9b6;background:#f6fdf9}
-                .tv-note{font-size:12.5px;color:#6b7c95;margin:6px 0 0}
-            </style>
 
             <!-- FORM FOOTER -->
             <div class="ap-card-footer">
@@ -902,6 +1013,168 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         select.value = formValues[field];
     });
+
+    // Custom Thickness dropdown: every sheet already saved in the chosen (sub-)category,
+    // e.g. 6 mm / 8 mm / 12 mm, with its price and available quantity.
+    const sheets = <?php echo json_encode($sheetRows, json_flags()); ?>;
+    const editId = <?php echo (int)$editId; ?>;
+    const thkPick = document.getElementById("thicknessPick");
+    const thkInfo = document.getElementById("thicknessInfo");
+    const thkInput = document.getElementById("thickness");
+    const thkCount = document.getElementById("thicknessCount");
+    const money = v => "₹" + Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const qty = v => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    const thkNum = t => { const m = String(t || "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : Infinity; };
+    let shownSheets = [];
+
+    function renderSheets(cat, allCats) {
+        thkInfo.hidden = true;
+        thkPick.innerHTML = "";
+        if (!cat) {
+            thkPick.add(new Option("Select sub-category first", ""));
+            thkPick.disabled = true;
+            thkCount.textContent = "";
+            shownSheets = [];
+            return;
+        }
+        // The chosen category and everything under it.
+        const ids = new Set(allCats.filter(c => c.label === cat.label || c.label.startsWith(cat.label + " › ")).map(c => c.id));
+        shownSheets = sheets
+            .filter(s => s.category_id !== null && ids.has(s.category_id) && s.id !== editId)
+            .sort((a, b) => thkNum(a.thickness) - thkNum(b.thickness) || a.name.localeCompare(b.name));
+        thkPick.disabled = false;
+        thkCount.textContent = shownSheets.length ? shownSheets.length + " sheet" + (shownSheets.length === 1 ? "" : "s") : "";
+        thkPick.add(new Option(shownSheets.length
+            ? "Select thickness (" + shownSheets.length + " saved in " + cat.name + ")"
+            : "No sheets saved in " + cat.name + " yet", ""));
+        shownSheets.forEach(s => {
+            const label = (s.thickness || "No thickness") + "  —  " + money(s.price) + "  ·  " + qty(s.stock) + " available" + (s.enabled ? "" : "  (disabled)");
+            thkPick.add(new Option(label, s.id));
+        });
+        thkPick.add(new Option("+ New thickness (type below)", "new"));
+        // Editing: point at the matching thickness if another sheet has it.
+        const cur = thkInput.value.trim().toLowerCase();
+        const same = cur && shownSheets.find(s => s.thickness.trim().toLowerCase() === cur);
+        if (same) { thkPick.value = String(same.id); showSheet(same); }
+    }
+
+    function showSheet(s) {
+        const low = s.stock <= 0;
+        thkInfo.innerHTML = `
+            <div class="thk-name"><i class="bi bi-layers-fill text-primary"></i>${App.esc(s.name)}</div>
+            <div class="thk-stats">
+                <div class="thk-stat"><span>Thickness</span><strong>${App.esc(s.thickness || "-")}</strong></div>
+                <div class="thk-stat"><span>Price</span><strong>${money(s.price)}</strong></div>
+                <div class="thk-stat ${low ? "low" : "ok"}"><span>Available Qty</span><strong>${qty(s.stock)}</strong></div>
+            </div>
+            <div class="thk-actions">
+                <a href="add-product.php?id=${s.id}"><i class="bi bi-pencil-square"></i> Edit this sheet</a>
+                <button type="button" data-use="price"><i class="bi bi-currency-rupee"></i> Use this price</button>
+            </div>
+            ${editId ? "" : '<div class="thk-warn"><i class="bi bi-info-circle"></i> This thickness is already saved. To change its price or stock use “Edit this sheet”; saving here creates another product.</div>'}`;
+        thkInfo.querySelector('[data-use="price"]').onclick = () => {
+            const p = document.getElementById("productPrice");
+            p.value = s.price;
+            p.dispatchEvent(new Event("input"));
+            App.toast("Price " + money(s.price) + " filled.");
+        };
+        thkInfo.hidden = false;
+    }
+
+    thkPick.addEventListener("change", () => {
+        const s = shownSheets.find(x => String(x.id) === thkPick.value);
+        thkInfo.hidden = true;
+        if (s) {
+            showSheet(s);
+            thkInput.value = s.thickness;
+        } else if (thkPick.value === "new") {
+            thkInput.value = "";
+            if (!thkInput.disabled) thkInput.focus();
+        }
+    });
+
+    // Category -> Sub-Category: pick the main category, then one of its sub-categories.
+    // The hidden "category" select keeps the full label (e.g. "Plywood › Marine Plywood") that is saved.
+    (function () {
+        const tree = <?php echo json_encode(array_map(fn($c) => [
+            'id' => $c['id'], 'name' => $c['name'], 'depth' => $c['depth'], 'label' => $c['label'],
+        ], $categoryRows), json_flags()); ?>;
+        const mainSel = document.getElementById("mainCategory");
+        const subSel = document.getElementById("subCategory");
+        const hidden = document.getElementById("productCategory");
+        const path = document.getElementById("categoryPath");
+        const count = document.getElementById("subCategoryCount");
+        const nameInput = document.getElementById("productName");
+
+        // Main category of each row + its descendants (tree is in display order).
+        let currentMain = null;
+        tree.forEach(c => { if (c.depth === 0) currentMain = c.id; c.main = currentMain; });
+        const byId = Object.fromEntries(tree.map(c => [c.id, c]));
+
+        function fillSubs(mainId, selectedId) {
+            const subs = tree.filter(c => c.main === mainId && c.depth > 0);
+            subSel.innerHTML = "";
+            if (!mainId) {
+                subSel.add(new Option("Select category first", ""));
+                subSel.disabled = true;
+                count.textContent = "";
+                return;
+            }
+            subSel.disabled = false;
+            subSel.add(new Option(subs.length ? "Select sub-category" : "No sub-categories (main category will be used)", ""));
+            subs.forEach(c => {
+                const o = new Option("  ".repeat(c.depth - 1) + c.name, c.id);
+                subSel.add(o);
+            });
+            if (!subs.length) subSel.disabled = true;
+            count.textContent = subs.length ? subs.length + " available" : "";
+            subSel.value = selectedId ? String(selectedId) : "";
+        }
+
+        function sync() {
+            const chosen = byId[subSel.value] || byId[mainSel.value];
+            hidden.value = chosen ? chosen.label : "";
+            path.innerHTML = chosen ? '<i class="bi bi-check-circle-fill"></i> ' + App.esc(chosen.label) : "";
+            renderSheets(chosen || null, tree);
+        }
+
+        mainSel.addEventListener("change", () => {
+            fillSubs(Number(mainSel.value) || null, null);
+            sync();
+            if (!subSel.disabled) subSel.focus();
+        });
+        // Product name follows the chosen sub-category until the user types their own name.
+        let autoFilledName = "";
+        function applyName() {
+            const c = byId[subSel.value] || byId[mainSel.value];
+            const current = nameInput.value.trim();
+            if (current !== "" && current !== autoFilledName) return; // typed by hand: keep it
+            const next = c ? c.name : "";
+            if (next === current) return;
+            nameInput.value = next;
+            autoFilledName = next;
+            nameInput.dispatchEvent(new Event("input")); // thickness rows rename too
+        }
+        mainSel.addEventListener("change", applyName);
+        subSel.addEventListener("change", () => {
+            sync();
+            applyName();
+        });
+
+        // Pre-fill (edit / after error) from the saved label.
+        const saved = tree.find(c => c.label === hidden.value);
+        if (saved) {
+            mainSel.value = String(saved.main);
+            fillSubs(saved.main, saved.depth > 0 ? saved.id : null);
+            sync();
+        } else if (hidden.value) {
+            // Old category that no longer exists in the tree: keep the plain dropdown.
+            document.getElementById("categoryFallback").classList.remove("d-none");
+            fillSubs(null);
+        } else {
+            fillSubs(null);
+        }
+    })();
 
     // GST: pre-select and show how it splits inside / outside the state.
     const taxSelect = document.getElementById("productTax");
@@ -1020,13 +1293,13 @@ document.addEventListener("DOMContentLoaded", function () {
             // While editing, new thicknesses start at 0 stock (server does the same).
             const stockHint = isEdit && !current ? "0" : (stockInput.value || "0");
             tr.innerHTML = `
-                <td><input type="hidden" name="variant_current[]" value="${current ? "1" : "0"}">
+                <td data-label="Thickness"><input type="hidden" name="variant_current[]" value="${current ? "1" : "0"}">
                     <input class="tv-thk" name="variant_thickness[]" value="${esc(v.thickness || "")}" required></td>
-                <td><input class="tv-name" name="variant_name[]" value="${esc(v.name || autoName(v.thickness || ""))}" maxlength="200">
+                <td data-label="Product name"><input class="tv-name" name="variant_name[]" value="${esc(v.name || autoName(v.thickness || ""))}" maxlength="200">
                     ${current ? '<span class="tv-badge">This product &middot; updated</span>' : (isEdit ? '<span class="tv-badge new">New product</span>' : "")}</td>
-                <td><input type="number" name="variant_price[]" min="0" step="0.01" value="${esc(v.price || "")}" placeholder="${esc(priceInput.value || "0")}"></td>
-                <td><input type="number" name="variant_stock[]" min="0" step="0.01" value="${esc(v.stock || "")}" placeholder="${esc(stockHint)}"></td>
-                <td>${current ? "" : '<button type="button" class="tv-del" title="Remove"><i class="bi bi-trash"></i></button>'}</td>`;
+                <td data-label="Price"><input type="number" name="variant_price[]" min="0" step="0.01" value="${esc(v.price || "")}" placeholder="${esc(priceInput.value || "0")}"></td>
+                <td data-label="Stock"><input type="number" name="variant_stock[]" min="0" step="0.01" value="${esc(v.stock || "")}" placeholder="${esc(stockHint)}"></td>
+                <td class="tv-act">${current ? "" : '<button type="button" class="tv-del" title="Remove"><i class="bi bi-trash"></i></button>'}</td>`;
             tr.dataset.auto = auto ? "1" : "";
             if (current) tr.classList.add("tv-current");
             tvRows.appendChild(tr);
@@ -1064,6 +1337,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 tvChips.insertBefore(chip, tvInput);
             });
             const n = rows.length;
+            document.getElementById("tvCount").textContent = n ? n + " thickness" + (n === 1 ? "" : "es") : "";
             const added = n - tvRows.querySelectorAll("tr.tv-current").length;
             if (useVariants.checked && isEdit) {
                 saveLabel.innerHTML = `<i class="bi bi-floppy"></i> Update${added ? ` + Add ${added} New` : " Product"}`;
@@ -1077,9 +1351,10 @@ document.addEventListener("DOMContentLoaded", function () {
         function toggle() {
             const on = useVariants.checked;
             tvBody.hidden = !on;
+            document.getElementById("tvHint").hidden = !on;
             document.getElementById("tvBox").style.borderStyle = on ? "solid" : "dashed";
             thicknessInput.disabled = on;
-            thicknessInput.placeholder = on ? "Set per row below" : "Enter thickness";
+            thicknessInput.placeholder = on ? "Set per thickness at the bottom" : "Enter thickness";
             tvRows.querySelectorAll("input").forEach(i => i.disabled = !on);
             // Editing: start with this product as row 1; a typed list like "6, 9, 12 mm" becomes extra rows.
             if (on && isEdit && !tvRows.querySelector("tr.tv-current")) {
@@ -1096,7 +1371,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 tvRows.querySelectorAll("tr.tv-current input").forEach(i => i.disabled = false);
             }
             refresh();
-            if (on && !tvRows.querySelector("tr:not(.tv-empty)")) tvInput.focus();
+            if (on && !tvRows.querySelector("tr:not(.tv-empty)")) tvInput.focus({ preventScroll: true });
         }
 
         tvInput.addEventListener("keydown", e => {
@@ -1139,7 +1414,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 tr.querySelectorAll('input[type="number"]')[k].placeholder = inp.value || "0";
             });
         }));
-        useVariants.addEventListener("change", toggle);
+        useVariants.addEventListener("change", () => {
+            toggle();
+            if (useVariants.checked) tvBody.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
 
         // Restore after a validation error.
         (formValues.variants || []).forEach(v => addRow(v));

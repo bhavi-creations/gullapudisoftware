@@ -886,13 +886,6 @@ include 'header.php';
     renderProducts();
 
 })();
-(function () {
-    const saved = Number(new URLSearchParams(location.search).get("saved") || 0);
-    if (saved) {
-        App.toast(saved > 1 ? saved + " products added." : "Product saved.");
-        history.replaceState(null, "", location.pathname);
-    }
-})();
 </script>
 
 
