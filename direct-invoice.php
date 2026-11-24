@@ -25,9 +25,50 @@ foreach (db_all("SELECT id, name, mobile, gstin, addresses FROM customers WHERE 
     ];
 }
 
+/* Edit an existing invoice: direct-invoice.php?edit=INVOICE_ID */
+$editId = (int)($_GET['edit'] ?? 0);
+$editInvoice = null;
+if ($editId && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $inv = db_one('SELECT * FROM invoices WHERE id = ?', [$editId]);
+    if (!$inv) {
+        header('Location: invoices.php');
+        exit;
+    }
+    $ord = $inv['order_id'] ? db_one('SELECT * FROM orders WHERE id = ?', [(int)$inv['order_id']]) : null;
+    $lines = $ord ? db_all('SELECT product_id, name, hsn, quantity, rate, tax, discount FROM order_items WHERE order_id = ? ORDER BY id', [(int)$ord['id']]) : [];
+    $editInvoice = [
+        'id' => (int)$inv['id'],
+        'number' => $inv['invoice_number'],
+        'status' => $inv['status'],
+        'customer_id' => (int)$inv['customer_id'],
+        'date' => $inv['date'],
+        'due_date' => $inv['due_date'] ?: $inv['date'],
+        'region' => $inv['region'] ?: 'Inside AP',
+        'reference' => ($ord['reference'] ?? '') === 'Direct Invoice' ? '' : (string)($ord['reference'] ?? ''),
+        'notes' => (string)($ord['notes'] ?? ''),
+        'eway_bill' => (string)$inv['eway_bill'],
+        'vehicle_no' => (string)$inv['vehicle_no'],
+        'dispatched_through' => (string)$inv['dispatched_through'],
+        'round_off' => abs((float)$inv['amount'] - round((float)$inv['amount'])) < 0.001,
+        'paid' => (float)db_value('SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice = ?', [$inv['invoice_number']]),
+        'items' => array_map(fn($l) => [
+            'product_id' => $l['product_id'] ? (int)$l['product_id'] : null,
+            'name' => $l['name'],
+            'hsn' => (string)$l['hsn'],
+            'quantity' => (float)$l['quantity'],
+            'rate' => (float)$l['rate'],
+            'tax' => (float)$l['tax'],
+            'discount' => (float)$l['discount'],
+        ], $lines),
+    ];
+}
+
+$gstRateList = array_values(array_unique(array_column(gst_rates(), 'rate')));
+
 $products = [];
-foreach (db_all('SELECT id, name, thickness, size, hsn_code, price, tax_rate, stock, measurement_unit FROM products WHERE enabled = 1 ORDER BY name') as $p) {
+foreach (db_all('SELECT id, name, thickness, size, hsn_code, price, tax_rate, stock, measurement_unit, enabled FROM products ORDER BY name') as $p) {
     $products[] = [
+        'enabled' => (bool)$p['enabled'],
         'id' => (int)$p['id'],
         'name' => $p['name'],
         'thickness' => $p['thickness'] ?? '',
@@ -194,54 +235,124 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_activity('Customers', 'Added customer ' . $newCustomer['name'] . ' (from Direct Invoice)');
         }
 
-        $orderNumber = next_number('orders', 'order_number', 'ORD-');
-        $invoiceNumber = next_number('invoices', 'invoice_number', 'SI-');
-
-        $orderId = db_insert('orders', [
-            'order_number' => $orderNumber,
-            'date' => $date,
-            'delivery_date' => $due,
-            'customer_id' => $customerId,
-            'customer' => $customer['name'],
-            'salesman' => $_SESSION['user_name'] ?? null,
-            'store' => APP_STORE,
-            'reference' => $reference !== '' ? $reference : 'Direct Invoice',
-            'region' => $region,
-            'notes' => $notes,
+        $totals = [
             'subtotal' => round($subtotal, 2),
             'discount' => round($discountTotal, 2),
             'tax' => round($taxTotal, 2),
             'amount' => $total,
-            'status' => 'Invoice Raised',
-            'created_by' => (int)$_SESSION['user_id'],
-        ]);
+        ];
+        $editInvoiceId = (int)($payload['edit_id'] ?? 0);
 
-        foreach ($saved as $si) {
-            db_insert('order_items', ['order_id' => $orderId] + $si);
-            if ($si['product_id']) {
-                db_exec('UPDATE products SET stock = stock - ? WHERE id = ?', [$si['quantity'], $si['product_id']]);
+        if ($editInvoiceId) {
+            /* ---------- UPDATE an existing invoice (number stays the same) ---------- */
+            $inv = db_one('SELECT * FROM invoices WHERE id = ?', [$editInvoiceId]);
+            if (!$inv) {
+                throw new RuntimeException('Invoice not found.');
             }
+            $invoiceId = (int)$inv['id'];
+            $invoiceNumber = $inv['invoice_number'];
+            $paid = (float)db_value('SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice = ?', [$invoiceNumber]);
+            if ($paid > $total + 0.009) {
+                throw new RuntimeException('Rs ' . number_format($paid, 2) . ' is already paid on this invoice, more than the new total. Remove a payment first.');
+            }
+            $orderId = (int)$inv['order_id'];
+            if (!$orderId || !db_value('SELECT COUNT(*) FROM orders WHERE id = ?', [$orderId])) {
+                $orderId = db_insert('orders', [
+                    'order_number' => next_number('orders', 'order_number', 'ORD-'),
+                    'date' => $date,
+                    'status' => 'Invoice Raised',
+                    'store' => APP_STORE,
+                    'created_by' => (int)$_SESSION['user_id'],
+                    'invoice_id' => $invoiceId,
+                ]);
+            }
+            db_update('orders', [
+                'date' => $date,
+                'delivery_date' => $due,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'reference' => $reference !== '' ? $reference : 'Direct Invoice',
+                'region' => $region,
+                'notes' => $notes,
+            ] + $totals, $orderId);
+            order_replace_items($orderId, $saved); // stock of old lines returned, new lines taken
+
+            $status = in_array($inv['status'], ['Draft', 'Cancelled'], true) ? $inv['status'] : 'Submitted';
+            db_update('invoices', [
+                'order_id' => $orderId,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'date' => $date,
+                'due_date' => $due,
+                'region' => $region,
+                'status' => $status,
+            ] + $totals + $dispatch, $invoiceId);
+            refresh_invoice_status($invoiceNumber);
+            $logText = "Invoice $invoiceNumber updated for {$customer['name']} (Rs " . number_format($total, 2) . ')';
+        } else {
+            /* ---------- NEW invoice ---------- */
+            $orderNumber = next_number('orders', 'order_number', 'ORD-');
+            $invoiceNumber = next_number('invoices', 'invoice_number', 'SI-');
+
+            $orderId = db_insert('orders', [
+                'order_number' => $orderNumber,
+                'date' => $date,
+                'delivery_date' => $due,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'salesman' => $_SESSION['user_name'] ?? null,
+                'store' => APP_STORE,
+                'reference' => $reference !== '' ? $reference : 'Direct Invoice',
+                'region' => $region,
+                'notes' => $notes,
+                'status' => 'Invoice Raised',
+                'created_by' => (int)$_SESSION['user_id'],
+            ] + $totals);
+
+            order_replace_items($orderId, $saved);
+
+            $invoiceId = db_insert('invoices', [
+                'invoice_number' => $invoiceNumber,
+                'order_id' => $orderId,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'date' => $date,
+                'due_date' => $due,
+                'region' => $region,
+                'status' => 'Submitted',
+            ] + $totals + $dispatch);
+
+            db_update('orders', ['invoice_id' => $invoiceId], $orderId);
+            $logText = "Direct invoice $invoiceNumber created for {$customer['name']} (Rs " . number_format($total, 2) . ')';
         }
 
-        $invoiceId = db_insert('invoices', [
-            'invoice_number' => $invoiceNumber,
-            'order_id' => $orderId,
-            'customer_id' => $customerId,
-            'customer' => $customer['name'],
-            'date' => $date,
-            'due_date' => $due,
-            'region' => $region,
-            'subtotal' => round($subtotal, 2),
-            'discount' => round($discountTotal, 2),
-            'tax' => round($taxTotal, 2),
-            'amount' => $total,
-            'status' => 'Submitted',
-        ] + $dispatch);
+        // Advance / amount paid now (optional).
+        $advAmount = is_numeric($payload['advance_amount'] ?? null) ? round(max(0, (float)$payload['advance_amount']), 2) : 0;
+        if ($advAmount > 0) {
+            $paidSoFar = (float)db_value('SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice = ?', [$invoiceNumber]);
+            if ($advAmount > round($total - $paidSoFar, 2) + 0.009) {
+                throw new RuntimeException('Amount paid now is more than the invoice balance.');
+            }
+            $advDate = (string)($payload['advance_date'] ?? '');
+            $modes = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Card'];
+            db_insert('payments', [
+                'date' => $validDate($advDate) ? $advDate : date('Y-m-d'),
+                'type' => 'Advance',
+                'invoice' => $invoiceNumber,
+                'invoice_id' => $invoiceId,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'narration' => next_number('payments', 'narration', 'PAY-'),
+                'mode' => in_array($payload['advance_mode'] ?? '', $modes, true) ? $payload['advance_mode'] : 'Cash',
+                'amount' => $advAmount,
+                'notes' => 'Paid at billing',
+            ]);
+            refresh_invoice_status($invoiceNumber);
+        }
 
-        db_update('orders', ['invoice_id' => $invoiceId], $orderId);
         $pdo->commit();
 
-        log_activity('Invoices', "Direct invoice $invoiceNumber created for {$customer['name']} (Rs " . number_format($total, 2) . ')');
+        log_activity('Invoices', $logText);
 
         json_response([
             'success' => true,
@@ -262,7 +373,7 @@ $nextInvoice = next_number('invoices', 'invoice_number', 'SI-');
 $today = date('Y-m-d');
 $dueDefault = date('Y-m-d', strtotime('+15 days'));
 
-$pageTitle = 'Direct Invoice';
+$pageTitle = $editInvoice ? 'Edit Invoice ' . $editInvoice['number'] : 'Direct Invoice';
 include 'header.php';
 ?>
 
@@ -512,8 +623,13 @@ include 'header.php';
     <!-- PAGE HEADER -->
     <div class="row align-items-center g-3 mb-3">
         <div class="col-md-7">
-            <h1 class="di-title">Direct Invoice</h1>
-            <p class="di-subtitle">Raise a GST invoice directly, the way it will be printed.</p>
+            <?php if ($editInvoice): ?>
+                <h1 class="di-title">Edit Invoice <?php echo e($editInvoice['number']); ?></h1>
+                <p class="di-subtitle">Change customer, products, dispatch details - the invoice number stays the same and stock is corrected.</p>
+            <?php else: ?>
+                <h1 class="di-title">Direct Invoice</h1>
+                <p class="di-subtitle">Raise a GST invoice directly, the way it will be printed.</p>
+            <?php endif; ?>
         </div>
         <div class="col-md-5 text-md-end">
             <a href="invoices.php" class="di-btn"><i class="bi bi-receipt"></i> All Invoices</a>
@@ -533,7 +649,11 @@ include 'header.php';
             </div>
             <div class="di-doc">
                 <p class="di-doc-title">TAX INVOICE</p>
-                <span class="di-doc-no">No. <?php echo e($nextInvoice); ?> <span class="opacity-75">(auto)</span></span>
+                <?php if ($editInvoice): ?>
+                    <span class="di-doc-no">No. <?php echo e($editInvoice['number']); ?> <span class="opacity-75">(editing)</span></span>
+                <?php else: ?>
+                    <span class="di-doc-no">No. <?php echo e($nextInvoice); ?> <span class="opacity-75">(auto)</span></span>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -620,17 +740,26 @@ include 'header.php';
                                 <label class="di-label" for="diReference">Reference / PO No.</label>
                                 <input type="text" id="diReference" class="di-input" maxlength="150" placeholder="Optional">
                             </div>
-                            <div class="col-4">
-                                <label class="di-label" for="diEway">e-Way Bill No.</label>
-                                <input type="text" id="diEway" class="di-input" maxlength="50" placeholder="Optional">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DISPATCH DETAILS (printed on the invoice) -->
+                <div class="col-12">
+                    <div class="di-block" style="background:#f8fbff;border-color:#d7e6fb">
+                        <div class="di-block-title"><i class="bi bi-truck me-1"></i> Dispatch Details</div>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="di-label" for="diEway">Eway Bill Number</label>
+                                <input type="text" id="diEway" class="di-input" maxlength="50" placeholder="Enter eway bill number">
                             </div>
-                            <div class="col-4">
-                                <label class="di-label" for="diVehicle">Vehicle No.</label>
-                                <input type="text" id="diVehicle" class="di-input" maxlength="50" placeholder="Optional">
-                            </div>
-                            <div class="col-4">
-                                <label class="di-label" for="diDispatch">Dispatched through</label>
+                            <div class="col-md-4">
+                                <label class="di-label" for="diDispatch">Dispatched Through</label>
                                 <input type="text" id="diDispatch" class="di-input" maxlength="150" placeholder="e.g. Transport name">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="di-label" for="diVehicle">Vehicle Number</label>
+                                <input type="text" id="diVehicle" class="di-input di-upper" maxlength="50" placeholder="e.g. AP05AB1234">
                             </div>
                         </div>
                     </div>
@@ -665,7 +794,7 @@ include 'header.php';
             </div>
 
             <datalist id="diProducts">
-                <?php foreach ($products as $p): ?>
+                <?php foreach (array_filter($products, fn($p) => $p["enabled"]) as $p): ?>
                     <option value="<?php echo e($p['name']); ?>"></option>
                 <?php endforeach; ?>
             </datalist>
@@ -710,6 +839,35 @@ include 'header.php';
                         </div>
                         <div class="di-grand"><span>Grand Total</span><strong id="tGrand">Rs 0.00</strong></div>
                     </div>
+
+                    <!-- ADVANCE / AMOUNT PAID NOW -->
+                    <div class="di-block mt-3" style="height:auto;background:#f3fbf5;border-color:#cdebd6">
+                        <div class="di-block-title" style="color:#15803d"><i class="bi bi-cash-coin me-1"></i>
+                            <?php echo $editInvoice ? 'Add Payment Now' : 'Advance / Amount Paid Now'; ?>
+                            <span class="text-muted fw-normal text-lowercase">(optional)</span>
+                        </div>
+                        <?php if ($editInvoice && $editInvoice['paid'] > 0): ?>
+                            <div class="small mb-2">Already paid on this invoice: <b>Rs <?php echo number_format($editInvoice['paid'], 2); ?></b>
+                                - see <a href="payment.php">Payments</a></div>
+                        <?php endif; ?>
+                        <div class="row g-2">
+                            <div class="col-4">
+                                <label class="di-label" for="diAdvAmount">Amount</label>
+                                <input type="number" id="diAdvAmount" class="di-input" min="0" step="0.01" placeholder="0.00">
+                            </div>
+                            <div class="col-4">
+                                <label class="di-label" for="diAdvMode">Mode</label>
+                                <select id="diAdvMode" class="di-select">
+                                    <option>Cash</option><option>UPI</option><option>Bank Transfer</option><option>Cheque</option><option>Card</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <label class="di-label" for="diAdvDate">Paid On</label>
+                                <input type="date" id="diAdvDate" class="di-input" value="<?php echo e($today); ?>">
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2 small"><span>Balance after this payment</span><b id="tBalance">Rs 0.00</b></div>
+                    </div>
                 </div>
             </div>
 
@@ -738,6 +896,7 @@ include 'header.php';
     const customers = <?php echo json_encode($customers, json_flags()); ?>;
     const products = <?php echo json_encode($products, json_flags()); ?>;
     const productByName = new Map(products.map(p => [p.name.toLowerCase(), p]));
+    const editInvoice = <?php echo json_encode($editInvoice, json_flags()); ?>;
 
     const $ = id => document.getElementById(id);
     const lines = $("diLines");
@@ -771,6 +930,19 @@ include 'header.php';
         return words(rupees) + " Rupees" + (paise ? " and " + two(paise) + " Paise" : "") + " Only";
     }
 
+    /* ---- GST rates from the Taxes page ---- */
+    const gstRates = <?php echo json_encode($gstRateList, json_flags()); ?>;
+    const defaultGst = gstRates.includes(18) ? 18 : (gstRates[gstRates.length - 1] || 0);
+    function gstOptions(selected) {
+        const list = [...new Set([0, ...gstRates, Number(selected) || 0])].sort((a, b) => a - b);
+        return list.map(r => `<option value="${r}" ${r === Number(selected) ? "selected" : ""}>${r}%</option>`).join("");
+    }
+    function setTax(tr, value) {
+        const sel = field(tr, "tax");
+        sel.innerHTML = gstOptions(value);
+        sel.value = String(Number(value) || 0);
+    }
+
     /* ---- Lines ---- */
     function addLine(type) {
         const tr = document.createElement("tr");
@@ -790,7 +962,7 @@ include 'header.php';
             <td><input type="number" class="di-input num" data-f="quantity" value="1" min="0" step="any"></td>
             <td><input type="number" class="di-input num" data-f="rate" value="0" min="0" step="any"></td>
             <td><input type="number" class="di-input num" data-f="discount" value="0" min="0" max="100" step="any"></td>
-            <td><input type="number" class="di-input num" data-f="tax" value="18" min="0" max="100" step="any"></td>
+            <td><select class="di-input num" data-f="tax" aria-label="GST %">${gstOptions(defaultGst)}</select></td>
             <td class="di-line-amount" data-f="amount">Rs 0.00</td>
             <td><button type="button" class="di-remove" title="Remove line"><i class="bi bi-x-circle-fill"></i></button></td>`;
         tr.dataset.productId = "";
@@ -830,7 +1002,7 @@ include 'header.php';
             tr.dataset.productId = p.id;
             field(tr, "hsn").value = p.hsn || "";
             field(tr, "rate").value = p.rate;
-            field(tr, "tax").value = p.tax;
+            setTax(tr, p.tax);
             const bits = [p.thickness, p.size, p.unit].filter(Boolean).join(" · ");
             meta.innerHTML = (bits ? esc(bits) + " · " : "") +
                 `<span class="${p.stock <= 0 ? "text-danger" : ""}">Stock: ${esc(p.stock)}</span>`;
@@ -866,7 +1038,9 @@ include 'header.php';
         $("tRound").textContent = (r < 0 ? "- " : "+ ") + money(Math.abs(r));
         $("tGrand").textContent = money(grand);
         $("diWords").textContent = amountWords(grand);
+        $("tBalance").textContent = money(Math.max(0, grand - alreadyPaid - num($("diAdvAmount").value)));
     }
+    const alreadyPaid = editInvoice ? Number(editInvoice.paid || 0) : 0;
 
     lines.addEventListener("input", e => {
         const tr = e.target.closest("tr");
@@ -889,6 +1063,7 @@ include 'header.php';
     $("diAddLine").addEventListener("click", () => field(addLine("product"), "name").focus());
     $("diRegion").addEventListener("change", recalc);
     $("diRound").addEventListener("change", recalc);
+    $("diAdvAmount").addEventListener("input", recalc);
 
     $("diCustomer").addEventListener("change", function () {
         const c = customers.find(x => String(x.id) === this.value);
@@ -978,6 +1153,10 @@ include 'header.php';
                     dispatched_through: $("diDispatch").value,
                     notes: $("diNotes").value,
                     round_off: $("diRound").checked,
+                    edit_id: editInvoice ? editInvoice.id : 0,
+                    advance_amount: $("diAdvAmount").value || 0,
+                    advance_mode: $("diAdvMode").value,
+                    advance_date: $("diAdvDate").value,
                     print: print,
                     items: items
                 })
@@ -992,7 +1171,43 @@ include 'header.php';
     $("diSave").addEventListener("click", () => save(false));
     $("diSavePrint").addEventListener("click", () => save(true));
 
-    addLine();
+    /* ---- Edit mode: fill everything from the saved invoice ---- */
+    if (editInvoice) {
+        setCustomerMode("existing");
+        const sel = $("diCustomer");
+        if (editInvoice.customer_id && ![...sel.options].some(o => o.value === String(editInvoice.customer_id))) {
+            sel.add(new Option("Customer #" + editInvoice.customer_id, editInvoice.customer_id));
+        }
+        sel.value = editInvoice.customer_id ? String(editInvoice.customer_id) : "";
+        sel.dispatchEvent(new Event("change"));
+        $("diDate").value = editInvoice.date;
+        $("diDue").value = editInvoice.due_date;
+        $("diRegion").value = editInvoice.region;
+        $("diReference").value = editInvoice.reference;
+        $("diEway").value = editInvoice.eway_bill;
+        $("diVehicle").value = editInvoice.vehicle_no;
+        $("diDispatch").value = editInvoice.dispatched_through;
+        $("diNotes").value = editInvoice.notes;
+        $("diRound").checked = !!editInvoice.round_off;
+        editInvoice.items.forEach(it => {
+            const product = it.product_id ? products.find(p => p.id === it.product_id) : null;
+            const tr = addLine(it.product_id || productByName.has(String(it.name).toLowerCase()) ? "product" : "service");
+            field(tr, "name").value = product ? product.name : it.name;
+            applyProduct(tr);
+            if (!product && tr.dataset.type === "product") tr.dataset.productId = "";
+            field(tr, "hsn").value = it.hsn || "";
+            field(tr, "quantity").value = it.quantity;
+            field(tr, "rate").value = it.rate;
+            field(tr, "discount").value = it.discount;
+            setTax(tr, it.tax);
+        });
+        $("diSave").innerHTML = '<i class="bi bi-floppy"></i> Update Invoice';
+        $("diSavePrint").innerHTML = '<i class="bi bi-printer"></i> Update &amp; Print';
+        if (!editInvoice.items.length) addLine();
+        recalc();
+    } else {
+        addLine();
+    }
 })();
 </script>
 

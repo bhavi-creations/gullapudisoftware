@@ -20,7 +20,8 @@ $appNav = [
         ['Reports', 'bar-chart-line', 'reports.php', ['reports.php']],
     ],
     'Sales' => [
-        ['Quotations', 'file-earmark-text', 'quotation.php', ['quotation.php', 'add-quotation.php']],
+        ['Quotations', 'file-earmark-text', 'quotation.php', ['quotation.php', 'add-quotation.php', 'quotation-print.php']],
+        ['Master Quotations', 'star', 'master-quotation.php', ['master-quotation.php']],
         ['Orders', 'cart-check', 'orders.php', ['orders.php', 'add-order.php']],
         ['Invoices', 'receipt', 'invoices.php', ['invoices.php']],
         ['Direct Invoice', 'receipt-cutoff', 'direct-invoice.php', ['direct-invoice.php']],
@@ -42,7 +43,19 @@ $appNav = [
         ['Backup & Restore', 'cloud-arrow-up', 'backup-restore.php', ['backup-restore.php']],
     ],
 ];
+// Hide pages this employee has no access to (Employees > Access).
+foreach ($appNav as $group => $items) {
+    $appNav[$group] = array_values(array_filter($items, function ($menu) {
+        $module = page_module($menu[2]);
+        return $module === null || user_can($module);
+    }));
+    if (!$appNav[$group]) {
+        unset($appNav[$group]);
+    }
+}
 if ($isAdmin) {
+    // Owner gives each employee View / Add / Edit / Delete access per page.
+    $appNav['People'][] = ['Access', 'shield-lock', 'access.php', ['access.php']];
     $appNav['Tools'][] = ['Business Settings', 'building-gear', 'business-settings.php', ['business-settings.php']];
 }
 // Only the main business's administrators can create / manage other businesses.

@@ -104,6 +104,7 @@ function db_schema(): array
     mobile VARCHAR(15) NULL,
     dob DATE NULL,
     role VARCHAR(30) NOT NULL DEFAULT 'staff',
+    permissions TEXT NULL,
     password_hash VARCHAR(255) NOT NULL,
     enabled TINYINT(1) NOT NULL DEFAULT 1,
     last_login DATETIME NULL,
@@ -203,6 +204,7 @@ function db_schema(): array
     tax DECIMAL(14,2) NOT NULL DEFAULT 0,
     amount DECIMAL(14,2) NOT NULL DEFAULT 0,
     status VARCHAR(30) NOT NULL DEFAULT 'Draft',
+    is_master TINYINT(1) NOT NULL DEFAULT 0,
     created_by INT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -353,7 +355,7 @@ function db_schema(): array
     ];
 }
 
-const DB_SCHEMA_VERSION = '4';
+const DB_SCHEMA_VERSION = '6';
 
 function db_install(PDO $pdo): void
 {
@@ -387,6 +389,13 @@ function db_install(PDO $pdo): void
         ['customers', 'gstin', 'VARCHAR(20) NULL'],
         // v4: business name for Business customers
         ['customers', 'business_name', 'VARCHAR(200) NULL'],
+        // v5: employee page access + master quotations
+        ['users', 'permissions', 'TEXT NULL'],
+        ['quotations', 'is_master', 'TINYINT(1) NOT NULL DEFAULT 0'],
+        // v6: quotation -> invoice link, one GST rate per product, payment notes
+        ['quotations', 'invoice_id', 'INT NULL'],
+        ['products', 'tax_id', 'INT NULL'],
+        ['payments', 'notes', 'VARCHAR(255) NULL'],
     ];
     foreach ($newColumns as [$table, $column, $definition]) {
         $columnExists->execute([$table, $column]);
@@ -404,25 +413,40 @@ function db_install(PDO $pdo): void
         ]);
     }
 
-    // Standard GST taxes.
-    if ((int)$pdo->query('SELECT COUNT(*) FROM taxes')->fetchColumn() === 0) {
-        $taxes = [
-            ['SGST-14', 'SGST-14', 14], ['CGST 14', 'CGST-14', 14],
-            ['2.5% State Goods and Services Tax', 'SGST 2.5', 2.5],
-            ['2.5% Central Goods and Services Tax', 'CGST 2.5', 2.5],
-            ['5% Integrated Goods and Services Tax', 'IGST 5', 5],
-            ['12% Integrated Goods and Services Tax', 'IGST 12', 12],
-            ['18% Integrated Goods and Services Tax', 'IGST 18', 18],
-            ['9% State Goods and Services Tax', 'SGST 9', 9],
-            ['9% Central Goods and Services Tax', 'CGST 9', 9],
-            ['6% State Goods and Services Tax', 'SGST 6', 6],
-            ['6% Central Goods and Services Tax', 'CGST 6', 6],
-        ];
-        $stmt = $pdo->prepare('INSERT INTO taxes (name, code, amount) VALUES (?, ?, ?)');
-        foreach ($taxes as $t) {
-            $stmt->execute($t);
+    /*
+     * v6: GST is kept as ONE rate per tax (e.g. "GST 18%").
+     * Inside the state it is printed as CGST 9% + SGST 9%, outside as IGST 18%.
+     * Old separate CGST / SGST / IGST rows are converted into GST rates once.
+     */
+    $old = $pdo->query("SELECT id, name, code, amount FROM taxes
+                        WHERE UPPER(code) REGEXP 'CGST|SGST|IGST' OR UPPER(name) REGEXP 'CGST|SGST|IGST|CENTRAL|STATE GOODS|INTEGRATED'")->fetchAll();
+    if ($old) {
+        $rates = [];
+        foreach ($old as $t) {
+            $label = strtoupper($t['code'] . ' ' . $t['name']);
+            $split = preg_match('/CGST|SGST|CENTRAL|STATE GOODS/', $label) && !preg_match('/IGST|INTEGRATED/', $label);
+            $rates[] = round((float)$t['amount'] * ($split ? 2 : 1), 2);
+        }
+        $pdo->exec('DELETE FROM taxes WHERE id IN (' . implode(',', array_map(fn($t) => (int)$t['id'], $old)) . ')');
+        $stdRates = array_unique(array_merge([0, 5, 12, 18, 28], $rates));
+    } elseif ((int)$pdo->query('SELECT COUNT(*) FROM taxes')->fetchColumn() === 0) {
+        $stdRates = [0, 5, 12, 18, 28];
+    } else {
+        $stdRates = [];
+    }
+    sort($stdRates);
+    $exists = $pdo->prepare('SELECT COUNT(*) FROM taxes WHERE amount = ?');
+    $insert = $pdo->prepare("INSERT INTO taxes (name, code, amount, type, platforms, enabled) VALUES (?, ?, ?, 'Percentage', 'All platforms', 1)");
+    foreach ($stdRates as $rate) {
+        $exists->execute([$rate]);
+        if (!(int)$exists->fetchColumn()) {
+            $label = rtrim(rtrim(number_format((float)$rate, 2, '.', ''), '0'), '.');
+            $insert->execute(['GST ' . $label . '%', 'GST-' . $label, $rate]);
         }
     }
+    // Link each product to the GST rate it already uses.
+    $pdo->exec('UPDATE products p JOIN taxes t ON t.amount = p.tax_rate
+                SET p.tax_id = t.id WHERE p.tax_id IS NULL');
 
     $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES ('schema_version', ?)")
         ->execute([DB_SCHEMA_VERSION]);
@@ -507,6 +531,45 @@ function log_activity(string $module, string $action): void
     }
 }
 
+/**
+ * Categories in tree order (parent first, then its sub-categories).
+ * Each row: id, name, parent_id, depth, label ("Plywood › 18mm Ply").
+ */
+function category_tree(bool $enabledOnly = false): array
+{
+    $rows = db_all('SELECT id, name, parent_id, color_code FROM categories'
+        . ($enabledOnly ? ' WHERE enabled = 1' : '') . ' ORDER BY sort_order, name');
+    $byParent = [];
+    $ids = array_column($rows, 'id');
+    foreach ($rows as $r) {
+        $pid = (int)$r['parent_id'];
+        // Orphans (parent deleted / disabled) are shown at the top level.
+        if ($pid && !in_array($r['parent_id'], $ids, false)) {
+            $pid = 0;
+        }
+        $byParent[$pid][] = $r;
+    }
+    $out = [];
+    $walk = function (int $pid, int $depth, string $prefix) use (&$walk, &$out, $byParent) {
+        foreach ($byParent[$pid] ?? [] as $r) {
+            $label = $prefix === '' ? $r['name'] : $prefix . ' › ' . $r['name'];
+            $out[] = [
+                'id' => (int)$r['id'],
+                'name' => $r['name'],
+                'parent_id' => $r['parent_id'] ? (int)$r['parent_id'] : null,
+                'color_code' => $r['color_code'],
+                'depth' => $depth,
+                'label' => $label,
+            ];
+            if ($depth < 10) {
+                $walk((int)$r['id'], $depth + 1, $label);
+            }
+        }
+    };
+    $walk(0, 0, '');
+    return $out;
+}
+
 /** Cast DB rows: listed keys to bool / float for clean JSON. */
 function cast_rows(array $rows, array $bools = [], array $floats = []): array
 {
@@ -548,4 +611,123 @@ function refresh_invoice_status(string $invoiceNumber): void
         $status = 'Submitted';
     }
     db_update('invoices', ['status' => $status], (int)$invoice['id']);
+}
+
+/* ---------------------------------------------------------------
+ | GST RATES (Taxes page). One rate per tax, e.g. GST 18%:
+ |   Inside the state  -> CGST 9% + SGST 9%
+ |   Outside the state -> IGST 18%
+ --------------------------------------------------------------- */
+function gst_rates(bool $enabledOnly = true): array
+{
+    $rows = db_all('SELECT id, name, code, amount FROM taxes'
+        . ($enabledOnly ? ' WHERE enabled = 1' : '') . ' ORDER BY amount, id');
+    return array_map(fn($t) => [
+        'id' => (int)$t['id'],
+        'name' => $t['name'],
+        'code' => $t['code'],
+        'rate' => (float)$t['amount'],
+    ], $rows);
+}
+
+/** "9% CGST + 9% SGST" (inside state) or "18% IGST" (outside state). */
+function gst_split_label(float $rate, bool $inter): string
+{
+    $fmt = fn(float $v) => rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.');
+    return $inter ? $fmt($rate) . '% IGST' : $fmt($rate / 2) . '% CGST + ' . $fmt($rate / 2) . '% SGST';
+}
+
+/**
+ * Replace the product lines of an order and keep product stock correct:
+ * stock of the old lines is given back first, then the new lines are taken out.
+ */
+function order_replace_items(int $orderId, array $items): void
+{
+    foreach (db_all('SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL', [$orderId]) as $old) {
+        db_exec('UPDATE products SET stock = stock + ? WHERE id = ?', [$old['quantity'], $old['product_id']]);
+    }
+    db_exec('DELETE FROM order_items WHERE order_id = ?', [$orderId]);
+    foreach ($items as $it) {
+        db_insert('order_items', ['order_id' => $orderId] + $it);
+        if (!empty($it['product_id'])) {
+            db_exec('UPDATE products SET stock = stock - ? WHERE id = ?', [$it['quantity'], $it['product_id']]);
+        }
+    }
+}
+
+/** Totals of a list of lines (quantity, rate, tax %, discount %). */
+function lines_totals(array $items): array
+{
+    $sub = 0.0;
+    $disc = 0.0;
+    $tax = 0.0;
+    foreach ($items as $it) {
+        $base = (float)$it['quantity'] * (float)$it['rate'];
+        $d = $base * (float)$it['discount'] / 100;
+        $sub += $base;
+        $disc += $d;
+        $tax += ($base - $d) * (float)$it['tax'] / 100;
+    }
+    return [
+        'subtotal' => round($sub, 2),
+        'discount' => round($disc, 2),
+        'tax' => round($tax, 2),
+        'amount' => round($sub - $disc + $tax, 2),
+    ];
+}
+
+/**
+ * Stock movement per product id:
+ *   sold     = quantity billed on orders / invoices (stock was reduced for these)
+ *   returned = good items returned by customers (approved, back in stock)
+ *   damaged  = damaged items (approved returns, not back in stock)
+ *   pending  = return requests not yet approved
+ *   added    = total stock that came in (available + sold - returned)
+ */
+function product_stock_stats(): array
+{
+    $stats = [];
+    $sold = db_all("SELECT oi.product_id, SUM(oi.quantity) AS qty
+                    FROM order_items oi
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE oi.product_id IS NOT NULL
+                    GROUP BY oi.product_id");
+    foreach ($sold as $r) {
+        $stats[(int)$r['product_id']]['sold'] = (float)$r['qty'];
+    }
+    foreach (db_all('SELECT status, products FROM returns_damage') as $r) {
+        foreach (json_decode((string)$r['products'], true) ?: [] as $p) {
+            $pid = (int)($p['product_id'] ?? 0);
+            $qty = (float)($p['quantity'] ?? 0);
+            if (!$pid || $qty <= 0) {
+                continue;
+            }
+            if ($r['status'] === 'Return Approved') {
+                $key = ($p['reason'] ?? '') === 'damaged' ? 'damaged' : 'returned';
+            } elseif ($r['status'] === 'Return Requested') {
+                $key = 'pending';
+            } else {
+                continue;
+            }
+            $stats[$pid][$key] = ($stats[$pid][$key] ?? 0) + $qty;
+        }
+    }
+    return $stats;
+}
+
+/** Adds sold / returned / damaged / pending / added to product rows (each needs id + stock). */
+function attach_stock_stats(array $rows): array
+{
+    $stats = product_stock_stats();
+    foreach ($rows as &$r) {
+        $s = $stats[(int)$r['id']] ?? [];
+        $r['sold'] = round($s['sold'] ?? 0, 2);
+        $r['returned'] = round($s['returned'] ?? 0, 2);
+        $r['damaged'] = round($s['damaged'] ?? 0, 2);
+        $r['pending_return'] = round($s['pending'] ?? 0, 2);
+        // Total that came into stock = what is left + what went out - what came back.
+        $r['added'] = round((float)$r['stock'] + $r['sold'] - $r['returned'], 2);
+    }
+    unset($r);
+    return $rows;
 }

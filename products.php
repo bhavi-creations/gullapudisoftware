@@ -3,9 +3,9 @@
 require_once __DIR__ . '/includes/init.php';
 
 $products = cast_rows(
-    db_all('SELECT id, name, thickness, size, store, category, price, stock, enabled, featured, hsn_code FROM products ORDER BY id DESC'),
+    attach_stock_stats(db_all('SELECT id, name, thickness, size, store, category, price, stock, low_stock_alert, measurement_unit, tax_rate, enabled, featured, hsn_code FROM products ORDER BY id DESC')),
     ['enabled', 'featured'],
-    ['price', 'stock']
+    ['price', 'stock', 'low_stock_alert', 'tax_rate']
 );
 
 $pageTitle = 'Products';
@@ -79,7 +79,7 @@ include 'header.php';
 
                 <div>
                     <div class="pr-stat-label">
-                        Total Stock (Sheets)
+                        Available Stock
                     </div>
 
                     <div class="pr-stat-value" id="totalStock">
@@ -282,8 +282,11 @@ include 'header.php';
                         <th>Thickness</th>
                         <th>Size</th>
                         <th>Store</th>
-                        <th>Stock</th>
-                        <th>Status</th>
+                        <th class="text-end" title="Total stock that came in">Stock In</th>
+                        <th class="text-end" title="Sold on invoices">Sold</th>
+                        <th class="text-end" title="Good items returned by customers (back in stock)">Returned</th>
+                        <th class="text-end" title="Damaged items (not back in stock)">Damaged</th>
+                        <th class="text-end" title="Available now">Available</th>
                         <th>Enabled</th>
                         <th>Featured</th>
                         <th class="text-center">Action</th>
@@ -538,7 +541,7 @@ include 'header.php';
         if (!pageData.length) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10"
+                    <td colspan="13"
                         class="text-center py-5 text-muted">
                         No products found.
                     </td>
@@ -575,13 +578,13 @@ include 'header.php';
                         </div>
                     </td>
 
-                    <td>
-                        ${formatNumber(product.stock)}
-                    </td>
-
-                    <td>
-                        <span class="pr-badge ${product.enabled ? "" : "disabled"}">
-                            ${product.enabled ? "Enabled" : "Disabled"}
+                    <td class="text-end">${formatNumber(product.added || 0)}</td>
+                    <td class="text-end" style="color:#2563eb;font-weight:600">${formatNumber(product.sold || 0)}</td>
+                    <td class="text-end" style="color:#0f766e;font-weight:600">${formatNumber(product.returned || 0)}${product.pending_return ? `<div class="small text-muted" title="Return requests waiting for approval">+${formatNumber(product.pending_return)} pending</div>` : ""}</td>
+                    <td class="text-end" style="color:#dc2626;font-weight:600">${formatNumber(product.damaged || 0)}</td>
+                    <td class="text-end">
+                        <span class="pr-badge ${product.stock <= 0 ? "disabled" : ""}" style="${product.stock > 0 && product.stock <= (product.low_stock_alert || 10) ? "background:#fff4e5;color:#b45309" : ""}">
+                            ${formatNumber(product.stock)}
                         </span>
                     </td>
 
@@ -702,10 +705,27 @@ include 'header.php';
                 ["HSN Code", product.hsn],
                 ["Price", money(product.price)],
                 ["GST", (product.tax_rate || 0) + "%"],
-                ["Stock", stock + (product.measurement_unit ? " " + product.measurement_unit : "")],
                 ["Featured", product.featured ? "Yes" : "No"],
                 ["Enabled", product.enabled ? "Yes" : "No"]
             ],
+            html: (() => {
+                const unit = product.measurement_unit ? " " + escapeHTML(product.measurement_unit) : "";
+                const box = (label, value, color, note) => `
+                    <div style="flex:1 1 45%;border:1px solid #e6ebf2;border-radius:12px;padding:10px 12px;background:#fff">
+                        <div style="font-size:11.5px;font-weight:700;color:#8391a7;text-transform:uppercase;letter-spacing:.04em">${label}</div>
+                        <div style="font-size:20px;font-weight:800;color:${color}">${formatNumber(value || 0)}<small style="font-size:12px;font-weight:600">${unit}</small></div>
+                        ${note ? `<div style="font-size:11.5px;color:#8391a7">${note}</div>` : ""}
+                    </div>`;
+                return `<div style="font-weight:800;margin:4px 0 8px">Stock Summary</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        ${box("Stock In", product.added, "#0f172a", "Total received")}
+                        ${box("Sold", product.sold, "#2563eb", "On invoices")}
+                        ${box("Returned", product.returned, "#0f766e", product.pending_return ? formatNumber(product.pending_return) + " waiting approval" : "Back in stock")}
+                        ${box("Damaged", product.damaged, "#dc2626", "Not in stock")}
+                        ${box("Available Now", stock, stock <= 0 ? "#dc2626" : "#16a34a", stock <= low ? "Low stock" : "Ready to sell")}
+                    </div>
+                    <div style="font-size:11.5px;color:#8391a7;margin-top:8px">Stock In − Sold + Returned = Available. Change stock from Edit Product.</div>`;
+            })(),
             actions: [
                 { label: "Edit Product", icon: "pencil-fill", tone: "primary", href: "add-product.php?id=" + encodeURIComponent(product.id) },
                 { label: "Delete Product", icon: "trash3", tone: "danger", onClick: () => deleteProduct(id) }
@@ -865,6 +885,13 @@ include 'header.php';
     // Initial render.
     renderProducts();
 
+})();
+(function () {
+    const saved = Number(new URLSearchParams(location.search).get("saved") || 0);
+    if (saved) {
+        App.toast(saved > 1 ? saved + " products added." : "Product saved.");
+        history.replaceState(null, "", location.pathname);
+    }
 })();
 </script>
 

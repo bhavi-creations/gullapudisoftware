@@ -118,8 +118,23 @@ function customer_data(array $in): array
 /* ---------------- CATEGORIES ---------------- */
 function categories_list(): array
 {
-    $rows = db_all('SELECT * FROM categories ORDER BY sort_order ASC, id ASC');
+    // Tree order: each parent followed by its sub-categories.
+    $all = [];
+    foreach (db_all('SELECT * FROM categories') as $row) {
+        $all[(int)$row['id']] = $row;
+    }
+    $rows = [];
+    foreach (category_tree() as $node) {
+        $rows[] = $all[$node['id']] + ['depth' => $node['depth'], 'label' => $node['label']];
+    }
+    $childCount = [];
+    foreach ($rows as $row) {
+        if ($row['parent_id']) {
+            $childCount[(int)$row['parent_id']] = ($childCount[(int)$row['parent_id']] ?? 0) + 1;
+        }
+    }
     foreach ($rows as &$r) {
+        $r['children'] = $childCount[(int)$r['id']] ?? 0;
         $r['id'] = (int)$r['id'];
         $r['sort'] = (int)$r['sort_order'];
         $r['enabled'] = (bool)$r['enabled'];
@@ -176,7 +191,8 @@ function products_list(): array
         $r['hsn'] = $r['hsn_code'];
         $r['tax_rate'] = (float)$r['tax_rate'];
     }
-    return $rows;
+    unset($r);
+    return attach_stock_stats($rows);
 }
 
 try {
@@ -244,15 +260,102 @@ try {
         case 'categories.save':
             $data = category_data($input);
             $id = (int)($input['id'] ?? 0);
+            // A category cannot be placed under itself or under one of its own sub-categories.
+            if ($id > 0 && !empty($data['parent_id'])) {
+                $walk = (int)$data['parent_id'];
+                for ($i = 0; $walk && $i < 50; $i++) {
+                    if ($walk === $id) {
+                        json_response(['success' => false, 'message' => 'A category cannot be its own parent or sub-category.'], 422);
+                    }
+                    $walk = (int)db_value('SELECT parent_id FROM categories WHERE id = ?', [$walk]);
+                }
+            }
             if ($id > 0) {
                 db_update('categories', $data, $id);
-                db_exec('UPDATE products SET category = ? WHERE category_id = ?', [$data['name'], $id]);
+                // Keep product category labels ("Plywood › 18mm") in sync after rename / move.
+                foreach (category_tree() as $node) {
+                    db_exec('UPDATE products SET category = ? WHERE category_id = ?', [$node['label'], $node['id']]);
+                }
                 log_activity('Categories', 'Updated category ' . $data['name']);
             } else {
                 $id = db_insert('categories', $data);
                 log_activity('Categories', 'Added category ' . $data['name']);
             }
             json_response(['success' => true, 'id' => $id, 'categories' => categories_list()]);
+
+        /*
+         * Parent + many sub-categories in one go.
+         * { parentId: 5 }  or  { parentName: "Plywood", colorCode, imageUrl, sort }
+         * children: ["Marine Plywood", "Commercial Plywood", ...]  (duplicates skipped)
+         */
+        case 'categories.save_bulk':
+            $children = [];
+            foreach ((array)($input['children'] ?? []) as $c) {
+                $c = mb_substr(trim((string)$c), 0, 150);
+                if ($c !== '' && !in_array(mb_strtolower($c), array_map('mb_strtolower', $children), true)) {
+                    $children[] = $c;
+                }
+            }
+            $children = array_slice($children, 0, 200);
+            $parentId = (int)($input['parentId'] ?? 0);
+            $created = 0;
+            $skipped = [];
+
+            db()->beginTransaction();
+            if ($parentId) {
+                $parentName = db_value('SELECT name FROM categories WHERE id = ?', [$parentId]);
+                if ($parentName === false) {
+                    db()->rollBack();
+                    json_response(['success' => false, 'message' => 'Parent category not found.'], 404);
+                }
+            } else {
+                $parentName = in_str($input, 'parentName', 150);
+                if ($parentName === '') {
+                    db()->rollBack();
+                    json_response(['success' => false, 'message' => 'Enter the parent category name.'], 422);
+                }
+                $existing = db_value('SELECT id FROM categories WHERE parent_id IS NULL AND LOWER(name) = LOWER(?)', [$parentName]);
+                if ($existing) {
+                    $parentId = (int)$existing; // same parent already there -> just add the sub-categories
+                } else {
+                    $parentId = db_insert('categories', category_data([
+                        'name' => $parentName,
+                        'sort' => $input['sort'] ?? 0,
+                        'colorCode' => $input['colorCode'] ?? null,
+                        'imageUrl' => $input['imageUrl'] ?? '',
+                        'enabled' => true,
+                        'parentId' => null,
+                    ]));
+                    $created++;
+                }
+            }
+            $sort = (int)db_value('SELECT COUNT(*) FROM categories WHERE parent_id = ?', [$parentId]);
+            foreach ($children as $child) {
+                if (db_value('SELECT COUNT(*) FROM categories WHERE parent_id = ? AND LOWER(name) = LOWER(?)', [$parentId, $child])) {
+                    $skipped[] = $child;
+                    continue;
+                }
+                db_insert('categories', [
+                    'name' => $child,
+                    'parent_id' => $parentId,
+                    'sort_order' => ++$sort,
+                    'color_code' => in_str($input, 'colorCode', 20) ?: null,
+                    'enabled' => 1,
+                    'featured' => 0,
+                ]);
+                $created++;
+            }
+            db()->commit();
+            log_activity('Categories', "Added $parentName with " . (count($children) - count($skipped)) . ' sub-categories');
+            json_response([
+                'success' => true,
+                'parentId' => $parentId,
+                'created' => $created,
+                'skipped' => $skipped,
+                'message' => (count($children) - count($skipped)) . ' sub-categories saved under ' . $parentName
+                    . ($skipped ? ' (' . count($skipped) . ' already existed)' : '') . '.',
+                'categories' => categories_list(),
+            ]);
 
         case 'categories.delete':
             $id = (int)($input['id'] ?? 0);

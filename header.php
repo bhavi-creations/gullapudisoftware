@@ -25,6 +25,9 @@ $asset = fn(string $path) => $path . '?v=' . filemtime(__DIR__ . '/' . $path);
 <link rel="stylesheet" href="<?php echo $asset('assets/css/style.css'); ?>">
 <link rel="stylesheet" href="<?php echo $asset('assets/css/layout.css'); ?>">
 <link rel="stylesheet" href="<?php echo $asset('assets/css/premium.css'); ?>">
+<?php if ($permCss = permission_hide_css()): ?>
+<style id="permissionHide"><?php echo $permCss; ?></style>
+<?php endif; ?>
 
 <!-- Loaded in <head> so every page's inline scripts can use them -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

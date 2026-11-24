@@ -296,6 +296,37 @@
                         </div>
 
                         <div class="col-md-6">
+                            <label class="form-label fw-bold" for="categoryParent">
+                                Parent Category
+                            </label>
+                            <select class="form-select" id="categoryParent">
+                                <option value="">None (main category)</option>
+                            </select>
+                            <small class="text-muted">
+                                Choose a parent to make this a sub-category (e.g. Plywood).
+                            </small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="categoryColor">
+                                Color
+                            </label>
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="color"
+                                       class="form-control form-control-color"
+                                       id="categoryColor"
+                                       value="#ffffff"
+                                       title="Choose category color">
+                                <input type="text"
+                                       class="form-control"
+                                       id="categoryColorText"
+                                       maxlength="7"
+                                       placeholder="#ffffff"
+                                       style="max-width:130px">
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
                             <label class="form-label fw-bold">
                                 Sort ID
                             </label>
@@ -482,11 +513,73 @@
                 return false;
 
             const text = (
-                category.name + " " + category.code
+                category.name + " " + category.code + " " + (category.label || "")
             ).toLowerCase();
 
             return text.includes(search);
         });
+    }
+
+    function searchActive() {
+        return $("categorySearch").value.trim() !== "";
+    }
+
+    // Parent dropdown: every category except the one being edited and its own sub-categories.
+    function fillParentOptions(editId, selectedParentId) {
+        const blocked = new Set();
+        if (editId) {
+            blocked.add(editId);
+            let added = true;
+            while (added) {
+                added = false;
+                categories.forEach(c => {
+                    if (c.parentId && blocked.has(c.parentId) && !blocked.has(c.id)) {
+                        blocked.add(c.id);
+                        added = true;
+                    }
+                });
+            }
+        }
+        $("categoryParent").innerHTML =
+            '<option value="">None (main category)</option>' +
+            categories
+                .filter(c => !blocked.has(c.id))
+                .map(c => `<option value="${c.id}">${"&nbsp;&nbsp;&nbsp;".repeat(c.depth || 0)}${escapeHTML(c.name)}</option>`)
+                .join("");
+        $("categoryParent").value = selectedParentId ? String(selectedParentId) : "";
+    }
+
+    function setColor(value) {
+        const color = /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#ffffff";
+        $("categoryColor").value = color;
+        $("categoryColorText").value = value ? color : "";
+    }
+
+    $("categoryColor").addEventListener("input", function () {
+        $("categoryColorText").value = this.value;
+    });
+    $("categoryColorText").addEventListener("input", function () {
+        if (/^#[0-9a-f]{6}$/i.test(this.value)) $("categoryColor").value = this.value;
+    });
+
+    // Open the modal to add a sub-category under a parent.
+    // Add many sub-categories under this parent at once.
+    function addSubCategory(parentId) {
+        window.location.href = "add-categories.php?parent=" + encodeURIComponent(parentId);
+    }
+
+    function addSubCategoryPopup(parentId) {
+        const parent = categories.find(c => c.id === parentId);
+        $("categoryForm").reset();
+        $("editCategoryId").value = "";
+        $("categoryEnabled").checked = true;
+        $("categorySort").value = categories.filter(c => c.parentId === parentId).length;
+        $("categoryImage").value = "";
+        fillParentOptions(0, parentId);
+        setColor(parent ? parent.colorCode : "");
+        $("categoryModalTitle").textContent = "Add Sub-category" + (parent ? " under " + parent.name : "");
+        categoryModal.show();
+        setTimeout(() => $("categoryName").focus(), 300);
     }
 
     // Render table
@@ -538,7 +631,17 @@
                     </td>
 
                     <td>
-                        <strong>${escapeHTML(category.name)}</strong>
+                        <div class="d-flex align-items-center gap-2"
+                             style="padding-left:${(category.depth || 0) * 26}px">
+                            ${category.depth ? '<i class="bi bi-arrow-return-right text-muted"></i>' : ""}
+                            <span title="${escapeHTML(category.colorCode || "")}"
+                                  style="display:inline-block;width:14px;height:14px;border-radius:4px;flex-shrink:0;border:1px solid rgba(0,0,0,.2);background:${/^#[0-9a-f]{3,8}$/i.test(category.colorCode || "") ? category.colorCode : "transparent"}"></span>
+                            <div>
+                                <strong>${escapeHTML(category.name)}</strong>
+                                ${category.children ? `<div class="small text-muted">${category.children} sub-categor${category.children === 1 ? "y" : "ies"}</div>` : ""}
+                                ${category.depth && searchActive() ? `<div class="small text-muted">${escapeHTML(category.label)}</div>` : ""}
+                            </div>
+                        </div>
                     </td>
 
                     <td>${escapeHTML(category.sort)}</td>
@@ -567,6 +670,13 @@
                                     data-id="${category.id}"
                                     title="View">
                                 <i class="bi bi-eye"></i>
+                            </button>
+
+                            <button class="cat-action-btn"
+                                    data-action="addchild"
+                                    data-id="${category.id}"
+                                    title="Add Sub-category">
+                                <i class="bi bi-node-plus-fill"></i>
                             </button>
 
                             <button class="cat-action-btn"
@@ -658,6 +768,8 @@
             name: $("categoryName").value.trim(),
             code: $("categoryCode").value.trim(),
             sort: Number($("categorySort").value),
+            parentId: $("categoryParent").value ? Number($("categoryParent").value) : null,
+            colorCode: $("categoryColorText").value.trim() ? $("categoryColor").value : "",
             enabled: $("categoryEnabled").checked,
             featured: $("categoryFeatured").checked
         };
@@ -703,13 +815,16 @@
             badge: c.enabled ? { text: "Enabled", tone: "green" } : { text: "Disabled", tone: "red" },
             rows: [
                 ["Category Name", c.name],
-                ["Parent Category", parent ? parent.name : "None"],
+                ["Parent Category", parent ? parent.label || parent.name : "None"],
+                ["Sub-categories", c.children ? String(c.children) : "None"],
+                ["Color", c.colorCode || "None"],
                 ["Code", c.code || "None"],
                 ["Sort ID", c.sort],
                 ["Featured", c.featured ? "Yes" : "No"],
                 ["Enabled", c.enabled ? "Yes" : "No"]
             ],
             actions: [
+                { label: "Add Sub-category", icon: "node-plus-fill", tone: "neutral", onClick: () => addSubCategory(id) },
                 { label: "Edit Category", icon: "pencil-fill", tone: "primary", onClick: () => editCategory(id) },
                 { label: "Delete Category", icon: "trash3", tone: "danger", onClick: () => deleteCategory(id) }
             ]
@@ -740,6 +855,8 @@
         $("categoryEnabled").checked = c.enabled;
         $("categoryFeatured").checked = c.featured;
         $("categoryImage").value = "";
+        fillParentOptions(c.id, c.parentId);
+        setColor(c.colorCode || "");
 
         $("categoryModalTitle").textContent = "Edit Category";
 
@@ -761,6 +878,8 @@
         if (action === "view") viewCategory(id);
 
         if (action === "edit") editCategory(id);
+
+        if (action === "addchild") addSubCategory(id);
 
         try {
             if (action === "delete") {

@@ -39,7 +39,7 @@ $L = $isOrder ? [
     'details' => 'Quotation Details',
     'summary' => 'Quotation Summary',
     'save' => 'Save Quotation',
-    'saveMaster' => 'Save as Master Quotation',
+    'saveMaster' => 'Save Quotation',
     'saveGenerate' => 'Save & Generate Quotation',
     'waTitle' => 'Quotation',
 ];
@@ -66,16 +66,30 @@ $currentSalesman = $_SESSION['user_name'] ?? ($salesmen[0] ?? '');
 $today = date('Y-m-d');
 $validUpto = date('Y-m-d', strtotime('+30 days'));
 
-/* Convert quotation -> order: pre-fill items */
+/* Convert quotation -> order, or edit a saved quotation: pre-fill items */
 $prefill = null;
-if ($isOrder && !empty($_GET['quotation'])) {
-    $q = db_one('SELECT * FROM quotations WHERE id = ?', [(int)$_GET['quotation']]);
+$editQuotation = null;
+if (!$isOrder && !empty($_GET['edit'])) {
+    $editQuotation = db_one('SELECT * FROM quotations WHERE id = ?', [(int)$_GET['edit']]);
+    if (!$editQuotation && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+        header('Location: quotation.php');
+        exit;
+    }
+}
+$sourceId = $isOrder ? (int)($_GET['quotation'] ?? 0) : (int)($editQuotation['id'] ?? 0);
+if ($sourceId && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $q = db_one('SELECT * FROM quotations WHERE id = ?', [$sourceId]);
     if ($q) {
         $prefill = [
-            'quotation_id' => (int)$q['id'],
+            'quotation_id' => $isOrder ? (int)$q['id'] : 0,
+            'edit_id' => $isOrder ? 0 : (int)$q['id'],
             'quotation_number' => $q['quotation_id'],
             'customer_id' => (int)$q['customer_id'],
-            'reference' => $q['quotation_id'],
+            'reference' => $isOrder ? $q['quotation_id'] : (string)$q['reference'],
+            'date' => $isOrder ? null : $q['date'],
+            'valid_upto' => $isOrder ? null : $q['valid_upto'],
+            'salesman' => $isOrder ? null : $q['salesman'],
+            'is_master' => !$isOrder && (int)$q['is_master'] === 1,
             'region' => $q['region'],
             'notes' => $q['notes'],
             'items' => array_map(function ($i) {
@@ -249,10 +263,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
+        $isMaster = !empty($payload['is_master']) ? 1 : 0;
+        $editId = (int)($payload['edit_id'] ?? 0);
+
+        if ($editId) {
+            /* ---- UPDATE an existing quotation (number + status stay the same) ---- */
+            $existing = db_one('SELECT id, quotation_id, status FROM quotations WHERE id = ?', [$editId]);
+            if (!$existing) {
+                throw new RuntimeException('Quotation not found.');
+            }
+            // Edited after conversion -> open again so "Convert to Invoice" shows;
+            // converting again updates the invoice made earlier.
+            $newStatus = $existing['status'] === 'Converted' ? 'Accepted' : $existing['status'];
+            db_update('quotations', [
+                'status' => $newStatus,
+                'date' => $date,
+                'valid_upto' => $valid,
+                'customer_id' => $customerId,
+                'customer' => $customer['name'],
+                'salesman' => $salesman,
+                'reference' => $reference ?: null,
+                'region' => $region,
+                'notes' => $notes,
+                'subtotal' => round($subtotal, 2),
+                'discount' => round($discountTotal, 2),
+                'tax' => round($taxTotal, 2),
+                'amount' => $total,
+                'is_master' => $isMaster,
+            ], $editId);
+            db_exec('DELETE FROM quotation_items WHERE quotation_id = ?', [$editId]);
+            foreach ($savedItems as $si) {
+                db_insert('quotation_items', ['quotation_id' => $editId] + $si);
+            }
+            $pdo->commit();
+            log_activity('Quotations', "Quotation {$existing['quotation_id']} updated for {$customer['name']} (Rs " . number_format($total, 2) . ')');
+
+            json_response([
+                'success' => true,
+                'quotation_id' => $existing['quotation_id'],
+                'redirect' => ($payload['mode'] ?? '') === 'generate'
+                    ? 'quotation-print.php?id=' . $editId
+                    : ($isMaster ? 'master-quotation.php' : 'quotation.php') . '?saved=' . urlencode($existing['quotation_id'])
+            ]);
+        }
+
         $quotationNumber = next_number('quotations', 'quotation_id', 'QUOT-');
 
         $quotationId = db_insert('quotations', [
             'quotation_id' => $quotationNumber,
+            'is_master' => $isMaster,
             'date' => $date,
             'valid_upto' => $valid,
             'customer_id' => $customerId,
@@ -282,7 +341,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'quotation_id' => $quotationNumber,
             'redirect' => ($payload['mode'] ?? '') === 'generate'
                 ? 'quotation-print.php?id=' . $quotationId
-                : 'quotation.php?saved=' . urlencode($quotationNumber)
+                : ($isMaster ? 'master-quotation.php' : 'quotation.php') . '?saved=' . urlencode($quotationNumber)
         ]);
 
     } catch (Throwable $e) {
@@ -291,6 +350,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         json_response(['success' => false, 'message' => 'Unable to save: ' . $e->getMessage()], 500);
     }
+}
+
+if ($prefill && $prefill['edit_id']) {
+    $L['title'] = 'Edit Quotation ' . $prefill['quotation_number'];
+    $L['subtitle'] = 'Update this quotation. The quotation number stays the same.';
+    $L['saveMaster'] = 'Update Quotation';
+    $L['saveGenerate'] = 'Update & Generate Quotation';
 }
 
 $pageTitle = $L['title'];
@@ -520,11 +586,11 @@ include 'header.php';
                             id="quotationRegion">
 
                         <option value="Inside AP">
-                            Inside AP
+                            Inside AP (CGST + SGST)
                         </option>
 
                         <option value="Outside AP">
-                            Outside AP
+                            Outside AP (IGST)
                         </option>
 
                     </select>
@@ -616,7 +682,10 @@ include 'header.php';
     <div class="aq-totals d-none" id="aqTotals">
         <div><span>Subtotal</span><strong id="subtotalAmount">Rs 0.00</strong></div>
         <div><span>Discount</span><strong id="totalDiscount">Rs 0.00</strong></div>
-        <div><span>Tax</span><strong id="totalTax">Rs 0.00</strong></div>
+        <div data-gst="intra"><span>CGST</span><strong id="totalCgst">Rs 0.00</strong></div>
+        <div data-gst="intra"><span>SGST</span><strong id="totalSgst">Rs 0.00</strong></div>
+        <div data-gst="inter" class="d-none"><span>IGST</span><strong id="totalIgst">Rs 0.00</strong></div>
+        <div class="d-none"><span>Tax</span><strong id="totalTax">Rs 0.00</strong></div>
         <div class="grand"><span>Grand Total</span><strong id="grandTotal">Rs 0.00</strong></div>
     </div>
 
@@ -635,6 +704,15 @@ include 'header.php';
     <button type="button" class="aq-bar-btn whatsapp" id="whatsappBtn">
         <i class="bi bi-whatsapp"></i> WhatsApp
     </button>
+    <?php if (!$isOrder): ?>
+    <label class="aq-bar-btn" for="isMasterQuotation" style="cursor:pointer;user-select:none"
+           title="Master quotations are listed in both Quotations and Master Quotations">
+        <input type="checkbox" id="isMasterQuotation" class="form-check-input m-0"
+               style="width:1.15em;height:1.15em"
+               <?php echo (($prefill && !empty($prefill['is_master'])) || (!$prefill && !empty($_GET['master']))) ? 'checked' : ''; ?>>
+        <i class="bi bi-star-fill text-warning"></i> Master Quotation
+    </label>
+    <?php endif; ?>
     <button type="button" class="aq-bar-btn primary" id="saveQuotationBtn" data-mode="master">
         <?php echo e($L["saveMaster"]); ?>
     </button>
@@ -755,6 +833,9 @@ include 'header.php';
 
     const prefill = <?php echo json_encode($prefill, json_flags()); ?>;
 
+    // GST rates from the Taxes page.
+    const gstRates = <?php echo json_encode(array_values(array_unique(array_column(gst_rates(), 'rate'))), json_flags()); ?>;
+
     const $ = id => document.getElementById(id);
 
     let quotationItems = prefill ? prefill.items : [];
@@ -763,6 +844,15 @@ include 'header.php';
         $("quotationReference").value = prefill.reference || "";
         $("quotationRegion").value = prefill.region || "Inside AP";
         if (prefill.notes) $("quotationNotes").value = prefill.notes;
+        if (prefill.date) $("quotationDate").value = prefill.date;
+        if (prefill.valid_upto) $("validUpto").value = prefill.valid_upto;
+        if (prefill.salesman) {
+            const sm = $("salesman");
+            if (![...sm.options].some(o => o.value === prefill.salesman)) {
+                sm.add(new Option(prefill.salesman, prefill.salesman));
+            }
+            sm.value = prefill.salesman;
+        }
     }
 
     const productModal = bootstrap.Modal.getOrCreateInstance(
@@ -811,6 +901,13 @@ include 'header.php';
         $("subtotalAmount").textContent = formatMoney(subtotal);
         $("totalDiscount").textContent = formatMoney(totalDiscount);
         $("totalTax").textContent = formatMoney(totalTax);
+        // Inside state: CGST + SGST (half each). Outside state: IGST (full).
+        const inter = $("quotationRegion").value === "Outside AP";
+        $("totalCgst").textContent = formatMoney(totalTax / 2);
+        $("totalSgst").textContent = formatMoney(totalTax / 2);
+        $("totalIgst").textContent = formatMoney(totalTax);
+        document.querySelectorAll('#aqTotals [data-gst="intra"]').forEach(el => el.classList.toggle("d-none", inter));
+        document.querySelectorAll('#aqTotals [data-gst="inter"]').forEach(el => el.classList.toggle("d-none", !inter));
         $("grandTotal").textContent = formatMoney(grandTotal);
         $("aqTotals").classList.toggle("d-none", quotationItems.length === 0);
 
@@ -878,10 +975,10 @@ include 'header.php';
                     <select class="aq-table-input"
                             data-index="${index}"
                             data-field="tax">
-                        ${[...new Set([0,5,12,18,28,Number(item.tax)])].sort((a,b)=>a-b).map(rate => `
+                        ${[...new Set([0, ...gstRates, Number(item.tax)])].sort((a,b)=>a-b).map(rate => `
                             <option value="${rate}"
                                 ${Number(item.tax) === rate ? "selected" : ""}>
-                                ${rate}%
+                                GST ${rate}%
                             </option>
                         `).join("")}
                     </select>
@@ -1166,6 +1263,14 @@ include 'header.php';
     // Reset quotation form.
     $("newQuotationBtn").addEventListener("click", () => {
 
+        // While editing, "New" leaves edit mode and opens a blank quotation.
+        if (prefill && prefill.edit_id) {
+            if (confirm("Leave this quotation without saving and start a new one?")) {
+                window.location.href = "add-quotation.php";
+            }
+            return;
+        }
+
         if (
             quotationItems.length &&
             !confirm("Start a new quotation? Unsaved items will be cleared.")
@@ -1286,6 +1391,8 @@ include 'header.php';
             region: $("quotationRegion").value,
             customer_id: Number($("customerSelect").value),
             from_quotation: prefill ? prefill.quotation_id : 0,
+            edit_id: prefill ? (prefill.edit_id || 0) : 0,
+            is_master: $("isMasterQuotation") ? $("isMasterQuotation").checked : false,
             notes: $("quotationNotes").value,
             mode: mode,
             items: quotationItems.map(item => ({
@@ -1338,6 +1445,8 @@ include 'header.php';
             saveBtn.innerHTML = label;
         }
     }
+
+    $("quotationRegion").addEventListener("change", calculateTotals);
 
     $("saveQuotationBtn").addEventListener("click", function () { saveQuotation("master", this); });
     $("saveGenerateBtn").addEventListener("click", function () { saveQuotation("generate", this); });

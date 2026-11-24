@@ -156,7 +156,12 @@ function doc_render(array $doc): void
     }
     .toolbar .primary { background: #1479ff; border-color: #1479ff; color: #fff; }
     .toolbar .green { background: #15803d; border-color: #15803d; color: #fff; }
+    .toolbar .whatsapp { background: #25d366; border-color: #25d366; color: #fff; }
     .toolbar button:disabled { opacity: .6; cursor: wait; }
+    .wa-note {
+        max-width: 210mm; margin: 12px auto 0; padding: 10px 14px; border-radius: 8px;
+        background: #e7fbe9; color: #14532d; font: 600 13px Arial, sans-serif; display: none;
+    }
     .note {
         max-width: 210mm; margin: 12px auto 0; padding: 9px 14px; border-radius: 8px;
         background: #dcfce7; color: #166534; font: 700 13px Arial, sans-serif;
@@ -235,7 +240,7 @@ function doc_render(array $doc): void
     @page { size: A4; margin: 0; }
     @media print {
         body { background: #fff; }
-        .toolbar, .note { display: none !important; }
+        .toolbar, .note, .wa-note { display: none !important; }
         .sheet { margin: 0; box-shadow: none; }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
@@ -249,8 +254,11 @@ function doc_render(array $doc): void
         <a href="<?php echo e($doc['new_url']); ?>"><i class="bi bi-plus-lg"></i> <?php echo e($doc['new_label']); ?></a>
     <?php endif; ?>
     <button type="button" class="green" id="downloadPdf"><i class="bi bi-download"></i> Download PDF</button>
+    <button type="button" class="whatsapp" id="whatsappPdf"><i class="bi bi-whatsapp"></i> WhatsApp</button>
     <button type="button" class="primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
 </div>
+
+<div class="wa-note" id="waNote"></div>
 
 <?php if (!empty($doc['saved_note'])): ?>
     <div class="note"><i class="bi bi-check-circle-fill"></i> <?php echo e($doc['saved_note']); ?></div>
@@ -343,9 +351,7 @@ function doc_render(array $doc): void
                         <td class="r">
                             <b><?php echo doc_money($l['tax_amount']); ?></b>
                             <?php if ($l['tax_amount'] > 0): ?>
-                                <div class="taxline"><?php echo e($inter
-                                    ? doc_tax_label((float)$l['tax'], true)
-                                    : doc_qty((float)$l['tax'] / 2) . '% CGST + ' . doc_qty((float)$l['tax'] / 2) . '% SGST'); ?> : <?php echo doc_money($l['tax_amount']); ?></div>
+                                <div class="taxline"><?php echo e(gst_split_label((float)$l['tax'], $inter)); ?></div>
                             <?php endif; ?>
                         </td>
                         <td class="r b"><?php echo doc_money((float)$l['amount']); ?></td>
@@ -440,18 +446,29 @@ function doc_render(array $doc): void
     const btn = document.getElementById("downloadPdf");
     const fileName = <?php echo json_encode($fileName . '.pdf', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
-    async function downloadPdf() {
+    const waBtn = document.getElementById("whatsappPdf");
+    const waNote = document.getElementById("waNote");
+    const wa = <?php echo json_encode([
+        'mobile' => preg_replace('/\D+/', '', (string)($customer['mobile'] ?? '')),
+        'text' => 'Dear ' . $customer['name'] . ",\nPlease find attached " . $doc['title'] . ' ' . $doc['number']
+            . ' for Rs ' . doc_money((float)$doc['amount']) . ".\n\nThank you,\n" . COMPANY_NAME,
+    ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+    /*
+     * Runs html2pdf on a copy of the page. action(worker) is "save" or "blob".
+     * html2canvas measures from the page's scroll position and the sheet's
+     * centred position, which adds empty space on top / cuts the edges.
+     * So render a copy pinned to the top-left corner of the page at exact A4 width.
+     */
+    async function buildPdf(action, button, busyText) {
         if (typeof html2pdf === "undefined") {
             alert("PDF library could not load (check internet). Use Print -> Save as PDF instead.");
-            return;
+            return null;
         }
-        btn.disabled = true;
-        const label = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Preparing PDF...';
+        button.disabled = true;
+        const label = button.innerHTML;
+        button.innerHTML = '<i class="bi bi-hourglass-split"></i> ' + busyText;
 
-        // html2canvas measures from the page's scroll position and the sheet's
-        // centred position, which adds empty space on top / cuts the edges.
-        // So render a copy pinned to the top-left corner of the page at exact A4 width.
         const prevScroll = window.scrollY;
         window.scrollTo(0, 0);
 
@@ -464,23 +481,71 @@ function doc_render(array $doc): void
         document.body.appendChild(holder);
 
         try {
-            await html2pdf().set({
+            const worker = html2pdf().set({
                 margin: 0,
                 filename: fileName,
                 image: { type: "jpeg", quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
                 jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                 pagebreak: { mode: ["css", "legacy"], avoid: ["tr", ".sign", ".bottom"] }
-            }).from(copy).save();
+            }).from(copy);
+            return action === "blob" ? await worker.outputPdf("blob") : await worker.save();
         } finally {
             holder.remove();
             window.scrollTo(0, prevScroll);
-            btn.disabled = false;
-            btn.innerHTML = label;
+            button.disabled = false;
+            button.innerHTML = label;
         }
     }
 
+    function downloadPdf() {
+        return buildPdf("save", btn, "Preparing PDF...");
+    }
+
+    function whatsappUrl(text) {
+        let mobile = wa.mobile;
+        if (mobile.length === 10) mobile = "91" + mobile;
+        return "https://wa.me/" + mobile + "?text=" + encodeURIComponent(text);
+    }
+
+    /*
+     * WhatsApp: phones (and Windows/Mac with WhatsApp installed) get the share
+     * sheet with the PDF attached - choose WhatsApp there. Where a browser cannot
+     * share files, the PDF is downloaded and WhatsApp opens on the customer's
+     * chat with the message ready, so the downloaded PDF can be attached.
+     */
+    async function sendWhatsapp() {
+        const blob = await buildPdf("blob", waBtn, "Preparing PDF...");
+        if (!blob) return;
+        const file = new File([blob], fileName, { type: "application/pdf" });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({ files: [file], title: fileName, text: wa.text });
+                return;
+            } catch (error) {
+                if (error && error.name === "AbortError") return; // user closed the share sheet
+            }
+        }
+
+        // Fallback: download the PDF, then open WhatsApp chat.
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+
+        waNote.innerHTML = '<i class="bi bi-whatsapp"></i> ' +
+            "PDF downloaded (" + fileName.replace(/[<>&]/g, "") + "). WhatsApp is opening - " +
+            "click the attach (+ / paperclip) button in the chat and choose this PDF from your Downloads folder.";
+        waNote.style.display = "block";
+        window.open(whatsappUrl(wa.text + "\n\n(" + fileName + " attached)"), "_blank", "noopener");
+    }
+
     btn.addEventListener("click", downloadPdf);
+    waBtn.addEventListener("click", sendWhatsapp);
     <?php if ($autoDownload): ?>
     window.addEventListener("load", downloadPdf);
     <?php endif; ?>

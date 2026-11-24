@@ -11,12 +11,16 @@ require_once __DIR__ . '/includes/init.php';
 function employees_all(): array
 {
     $rows = cast_rows(
-        db_all('SELECT id, name, username, email, mobile, dob, role, enabled, last_login FROM users ORDER BY id'),
+        db_all('SELECT id, name, username, email, mobile, dob, role, permissions, enabled, last_login FROM users ORDER BY id'),
         ['enabled']
     );
     foreach ($rows as &$r) {
         $r['mobile'] = $r['mobile'] ?? '';
         $r['dob'] = $r['dob'] ?? '';
+        // null = full access (administrator or user created before page access existed)
+        $r['permissions'] = ($r['role'] === 'admin' || $r['permissions'] === null)
+            ? null
+            : array_keys(clean_permission_map(json_decode((string)$r['permissions'], true)));
     }
     return $rows;
 }
@@ -46,6 +50,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $isSelf = $id === (int)$_SESSION['user_id'];
+    $iAmAdmin = (current_user()['role'] ?? '') === 'admin';
+
+    // Only administrators can disable, delete or change an administrator.
+    if (!$iAmAdmin && $employee['role'] === 'admin' && !$isSelf) {
+        employeeJson(['success' => false, 'message' => 'Only an administrator can change an administrator account.'], 403);
+    }
 
     if ($action === 'toggle') {
         if ($isSelf) {
@@ -106,6 +116,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'enabled' => $enabled ? 1 : 0,
         ];
 
+        // Page access (your own access cannot be changed here, so nobody locks themselves out).
+        if (!$isSelf && isset($_POST['role'])) {
+            $role = ($iAmAdmin && $_POST['role'] === 'admin') ? 'admin' : 'staff';
+            $permissions = clean_permissions(json_decode((string)($_POST['permissions'] ?? '[]'), true));
+            $myPermissions = granted_modules();
+            if ($myPermissions !== null) {
+                $permissions = array_values(array_intersect($permissions, $myPermissions));
+            }
+            if ($role === 'staff' && !$permissions) {
+                employeeJson(['success' => false, 'message' => 'Select at least one page this employee can access.'], 422);
+            }
+            // Pages that stay ticked keep the View/Add/Edit/Delete set on the Access page;
+            // newly ticked pages get every action.
+            $oldRaw = db_value('SELECT permissions FROM users WHERE id = ?', [$id]);
+            $oldMap = $oldRaw ? clean_permission_map(json_decode((string)$oldRaw, true)) : [];
+            $map = [];
+            foreach (full_permission_map($permissions) as $module => $actions) {
+                $map[$module] = $oldMap[$module] ?? $actions;
+            }
+            $update['role'] = $role;
+            $update['permissions'] = $role === 'admin' ? null : json_encode($map);
+        }
+
         $newPassword = (string)($_POST['password'] ?? '');
         if ($newPassword !== '') {
             if (strlen($newPassword) < 8 || strlen($newPassword) > 72) {
@@ -131,6 +164,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $employees = employees_all();
+$iAmAdminPage = (current_user()['role'] ?? '') === 'admin';
+$grantablePage = granted_modules();
 $pageTitle = 'Employees';
 include 'header.php';
 ?>
@@ -625,6 +660,48 @@ include 'header.php';
 
                         </div>
 
+                        <!-- ACCESS -->
+                        <div class="col-12" id="editAccessSection">
+
+                            <label for="editEmployeeRole" class="form-label fw-semibold">
+                                Access
+                            </label>
+
+                            <select class="form-select mb-2" id="editEmployeeRole" style="max-width:360px">
+                                <option value="staff">Employee - only selected pages</option>
+                                <?php if ($iAmAdminPage): ?>
+                                <option value="admin">Administrator - full access</option>
+                                <?php endif; ?>
+                            </select>
+
+                            <div id="editPermissionBox">
+                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                    <small class="text-muted">Tick the pages this employee can open:</small>
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="editPermAll">Select all</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="editPermNone">Clear</button>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <?php foreach (app_modules() as $key => [$label, $icon]): ?>
+                                        <?php if ($grantablePage !== null && !in_array($key, $grantablePage, true)) continue; ?>
+                                        <div class="col-sm-6 col-lg-4">
+                                            <label class="d-flex align-items-center gap-2 border rounded-3 px-2 py-2 h-100 small" style="cursor:pointer">
+                                                <input type="checkbox" class="form-check-input m-0 edit-perm-check" value="<?php echo e($key); ?>">
+                                                <i class="bi bi-<?php echo e($icon); ?> text-primary"></i>
+                                                <span><?php echo e($label); ?></span>
+                                            </label>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+
+                            <small class="text-muted d-none" id="editAccessSelfNote">
+                                You cannot change your own access.
+                            </small>
+
+                        </div>
+
                     </div>
 
                     <div id="editEmployeeError"
@@ -701,9 +778,27 @@ include 'header.php';
 
     const $ = id => document.getElementById(id);
 
+    const currentUserId = <?php echo (int)$_SESSION['user_id']; ?>;
+    const moduleLabels = <?php echo json_encode(array_map(fn($m) => $m[0], app_modules()), json_flags()); ?>;
+
     let activeTab = "all";
     let currentPage = 1;
     let perPage = 20;
+
+    // Access: show page checkboxes only for employees (not administrators).
+    const editPermChecks = () => document.querySelectorAll(".edit-perm-check");
+    function toggleEditPermissionBox() {
+        $("editPermissionBox").classList.toggle("d-none", $("editEmployeeRole").value === "admin");
+    }
+    $("editEmployeeRole").addEventListener("change", toggleEditPermissionBox);
+    $("editPermAll").addEventListener("click", () => editPermChecks().forEach(c => c.checked = true));
+    $("editPermNone").addEventListener("click", () => editPermChecks().forEach(c => c.checked = false));
+
+    function accessText(employee) {
+        if (employee.role === "admin") return "Administrator (full access)";
+        if (!Array.isArray(employee.permissions)) return "Full access";
+        return employee.permissions.map(k => moduleLabels[k] || k).join(", ") || "No pages";
+    }
 
     const viewModal = bootstrap.Modal.getOrCreateInstance(
         $("employeeViewModal")
@@ -989,6 +1084,7 @@ include 'header.php';
                 ["Mobile", employee.mobile || "-"],
                 ["Date of Birth", formatDate(employee.dob)],
                 ["Role", employee.role ? employee.role.charAt(0).toUpperCase() + employee.role.slice(1) : "-"],
+                ["Access", accessText(employee)],
                 ["Enabled", employee.enabled ? "Yes" : "No"]
             ],
             actions: [
@@ -1023,6 +1119,22 @@ include 'header.php';
         $("editEmployeeMobile").value = employee.mobile || "";
         $("editEmployeeDob").value = employee.dob || "";
         $("editEmployeeEnabled").checked = employee.enabled;
+
+        // Access section.
+        const isSelf = Number(employee.id) === currentUserId;
+        const roleSelect = $("editEmployeeRole");
+        const canPickAdmin = [...roleSelect.options].some(o => o.value === "admin");
+        roleSelect.value = employee.role === "admin" && canPickAdmin ? "admin" : "staff";
+        const perms = Array.isArray(employee.permissions)
+            ? employee.permissions
+            : Object.keys(moduleLabels); // full access -> everything ticked
+        editPermChecks().forEach(c => c.checked = perms.includes(c.value));
+        roleSelect.disabled = isSelf;
+        editPermChecks().forEach(c => c.disabled = isSelf);
+        $("editPermAll").disabled = isSelf;
+        $("editPermNone").disabled = isSelf;
+        $("editAccessSelfNote").classList.toggle("d-none", !isSelf);
+        toggleEditPermissionBox();
 
         $("editEmployeeError").classList.add("d-none");
         $("editEmployeeError").textContent = "";
@@ -1097,7 +1209,7 @@ include 'header.php';
 
             try {
 
-                await updateEmployee("update", {
+                const data = {
                     id: $("editEmployeeId").value,
                     name: $("editEmployeeName").value.trim(),
                     username: $("editEmployeeUsername").value.trim(),
@@ -1105,7 +1217,18 @@ include 'header.php';
                     mobile: $("editEmployeeMobile").value.trim(),
                     dob: $("editEmployeeDob").value,
                     enabled: $("editEmployeeEnabled").checked ? "1" : "0"
-                });
+                };
+
+                if (!$("editEmployeeRole").disabled) {
+                    const perms = [...editPermChecks()].filter(c => c.checked).map(c => c.value);
+                    if ($("editEmployeeRole").value !== "admin" && !perms.length) {
+                        throw new Error("Select at least one page this employee can access.");
+                    }
+                    data.role = $("editEmployeeRole").value;
+                    data.permissions = JSON.stringify(perms);
+                }
+
+                await updateEmployee("update", data);
 
                 editModal.hide();
                 showMessage("Employee updated successfully.");

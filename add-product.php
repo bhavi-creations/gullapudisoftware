@@ -11,20 +11,16 @@ $stores = [
     'Gullapudi Godown'
 ];
 
-$categoryRows = db_all('SELECT id, name FROM categories WHERE enabled = 1 ORDER BY sort_order, name');
-$categories = array_column($categoryRows, 'name');
+// Categories in tree order; option value = full label, e.g. "Plywood › 18mm Ply".
+$categoryRows = category_tree(true);
 
 $productTypes = [
     'Manufacture',
     'Customized'
 ];
 
-$taxes = [];
-$taxRates = [];
-foreach (db_all('SELECT name, code, amount FROM taxes WHERE enabled = 1 ORDER BY id') as $t) {
-    $taxes[$t['code']] = $t['name'];
-    $taxRates[$t['code']] = (float)$t['amount'];
-}
+// GST rates from the Taxes page (id => row). Inside state = CGST + SGST, outside = IGST.
+$gstRates = array_column(gst_rates(true), null, 'id');
 
 $errors = [];
 $success = '';
@@ -36,6 +32,14 @@ if ($editId) {
     if (!$editing) {
         header('Location: products.php');
         exit;
+    }
+    // Keep the product's current tax selectable even if it was disabled later.
+    $currentTaxId = (int)$editing['tax_id'];
+    if ($currentTaxId && !isset($gstRates[$currentTaxId])) {
+        $t = db_one('SELECT id, name, code, amount FROM taxes WHERE id = ?', [$currentTaxId]);
+        if ($t) {
+            $gstRates[$currentTaxId] = ['id' => (int)$t['id'], 'name' => $t['name'] . ' (disabled)', 'code' => $t['code'], 'rate' => (float)$t['amount']];
+        }
     }
 }
 
@@ -64,7 +68,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $name = trim($_POST['product_name'] ?? '');
     $price = trim($_POST['price'] ?? '');
-    $discountValue = trim($_POST['discount_value'] ?? '');
     $stock = trim($_POST['stock'] ?? '');
 
     if ($name === '') {
@@ -76,41 +79,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Enter a valid product price.';
     }
 
-    if ($discountValue !== '' &&
-        (!is_numeric($discountValue) || (float)$discountValue < 0)) {
-        $errors[] = 'Enter a valid discount value.';
-    }
-
     if ($stock !== '' &&
         (!is_numeric($stock) || (float)$stock < 0)) {
         $errors[] = 'Enter a valid stock quantity.';
     }
 
-    $allowedTaxKeys = array_keys($taxes);
-
-    $selectedTaxes = array_values(array_intersect(
-        $allowedTaxKeys,
-        (array)($_POST['taxes'] ?? [])
-    ));
-
-    $selectedDefaultTaxes = array_values(array_intersect(
-        $allowedTaxKeys,
-        (array)($_POST['default_taxes'] ?? [])
-    ));
-
-    // Total GST rate used by quotations / orders.
-    $taxRate = 0;
-    foreach ($selectedDefaultTaxes ?: $selectedTaxes as $code) {
-        $taxRate += $taxRates[$code] ?? 0;
+    // GST rate used by quotations / invoices (split CGST+SGST or IGST there).
+    $taxId = (int)($_POST['tax_id'] ?? 0);
+    if ($taxId && !isset($gstRates[$taxId])) {
+        $errors[] = 'Select a valid GST rate.';
     }
+    $taxRate = $taxId && isset($gstRates[$taxId]) ? $gstRates[$taxId]['rate'] : 0;
+    $taxCode = $taxId && isset($gstRates[$taxId]) ? [$gstRates[$taxId]['code']] : [];
 
     if (empty($errors)) {
 
         $categoryName = trim($_POST['category'] ?? '');
         $categoryId = null;
         foreach ($categoryRows as $c) {
-            if ($c['name'] === $categoryName) {
-                $categoryId = (int)$c['id'];
+            if ($c['label'] === $categoryName) {
+                $categoryId = $c['id'];
             }
         }
 
@@ -120,24 +108,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'name' => mb_substr($name, 0, 200),
             'category_id' => $categoryId,
             'category' => $categoryName ?: null,
-            'discount_type' => trim($_POST['discount_type'] ?? '') ?: null,
             'product_type' => trim($_POST['product_type'] ?? '') ?: null,
             'price' => $price === '' ? 0 : (float)$price,
-            'discount_value' => $discountValue === '' ? 0 : (float)$discountValue,
             'stock' => $stock === '' ? 0 : (float)$stock,
             'hsn_code' => trim($_POST['hsn_code'] ?? '') ?: null,
             'thickness' => trim($_POST['thickness'] ?? '') ?: null,
             'size' => trim($_POST['size'] ?? '') ?: null,
             'product_expiry' => isset($_POST['product_expiry']) ? 1 : 0,
             'measurement_unit' => trim($_POST['measurement_unit'] ?? '') ?: null,
-            'taxes' => json_encode($selectedTaxes),
-            'default_taxes' => json_encode($selectedDefaultTaxes),
+            'taxes' => json_encode($taxCode),
+            'default_taxes' => json_encode($taxCode),
+            'tax_id' => $taxId ?: null,
             'tax_rate' => $taxRate,
             'description' => trim($_POST['description'] ?? '') ?: null,
             'additional_info' => trim($_POST['additional_info'] ?? '') ?: null
         ];
 
-        if ($editing) {
+        // Multiple thicknesses at once: one product per thickness row.
+        // When editing, the row marked "current" updates this product; other rows are new products.
+        $variantThick = (array)($_POST['variant_thickness'] ?? []);
+        $useVariants = isset($_POST['use_variants']) && $variantThick;
+
+        if ($useVariants) {
+            $rows = [];
+            $currentRow = null;
+            $seen = [];
+            foreach ($variantThick as $i => $t) {
+                $t = mb_substr(trim((string)$t), 0, 50);
+                if ($t === '') continue;
+                $isCurrent = $editing && ($_POST['variant_current'][$i] ?? '0') === '1' && $currentRow === null;
+                $vName = mb_substr(trim((string)($_POST['variant_name'][$i] ?? '')) ?: ($name . ' ' . $t), 0, 200);
+                $vPrice = trim((string)($_POST['variant_price'][$i] ?? ''));
+                $vStock = trim((string)($_POST['variant_stock'][$i] ?? ''));
+                if (($vPrice !== '' && (!is_numeric($vPrice) || (float)$vPrice < 0)) ||
+                    ($vStock !== '' && (!is_numeric($vStock) || (float)$vStock < 0))) {
+                    $errors[] = "Enter a valid price and stock for thickness $t.";
+                    continue;
+                }
+                $key = mb_strtolower($vName);
+                if (isset($seen[$key])) {
+                    $errors[] = "\"$vName\" is listed twice.";
+                    continue;
+                }
+                $seen[$key] = true;
+                if (db_one('SELECT id FROM products WHERE LOWER(name) = ? AND id <> ?', [$key, $editing ? $editId : 0])) {
+                    $errors[] = "A product named \"$vName\" already exists.";
+                    continue;
+                }
+                $row = array_merge($product, [
+                    'name' => $vName,
+                    'thickness' => $t,
+                    'price' => $vPrice === '' ? $product['price'] : (float)$vPrice,
+                    // New thicknesses added while editing start at 0 stock unless typed.
+                    'stock' => $vStock === '' ? ($editing && !$isCurrent ? 0 : $product['stock']) : (float)$vStock,
+                ]);
+                if ($isCurrent) {
+                    $currentRow = $row;
+                } else {
+                    $rows[] = $row;
+                }
+            }
+            if ($editing && $currentRow === null && !$errors) {
+                $errors[] = 'Keep a row for the product you are editing.';
+            }
+            if (!$rows && !$currentRow && !$errors) {
+                $errors[] = 'Add at least one thickness.';
+            }
+            if (empty($errors)) {
+                db()->beginTransaction();
+                if ($currentRow) {
+                    db_update('products', $currentRow, $editId);
+                }
+                foreach ($rows as $r) {
+                    db_insert('products', $r);
+                }
+                db()->commit();
+                $names = array_column($rows, 'name');
+                if ($currentRow) {
+                    log_activity('Products', 'Updated product ' . $currentRow['name'] . ($names ? ' and added: ' . implode(', ', $names) : ''));
+                } else {
+                    log_activity('Products', 'Added ' . count($rows) . ' products: ' . implode(', ', $names));
+                }
+                header('Location: products.php?saved=' . (count($rows) + ($currentRow ? 1 : 0)) . ($currentRow ? '&edited=1' : ''));
+                exit;
+            }
+        } elseif ($editing) {
             db_update('products', $product, $editId);
             log_activity('Products', 'Updated product ' . $product['name']);
         } else {
@@ -145,8 +200,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_activity('Products', 'Added product ' . $product['name']);
         }
 
-        header('Location: products.php?saved=1');
-        exit;
+        if (empty($errors)) {
+            header('Location: products.php?saved=1');
+            exit;
+        }
     }
 }
 
@@ -157,22 +214,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'store' => $_POST['store'] ?? '',
         'category' => $_POST['category'] ?? '',
         'product_type' => $_POST['product_type'] ?? '',
-        'discount_type' => $_POST['discount_type'] ?? '',
         'measurement_unit' => $_POST['measurement_unit'] ?? '',
-        'taxes' => (array)($_POST['taxes'] ?? []),
-        'default_taxes' => (array)($_POST['default_taxes'] ?? []),
+        'tax_id' => (string)($_POST['tax_id'] ?? ''),
         'enabled' => isset($_POST['enabled']),
         'product_expiry' => isset($_POST['product_expiry']),
+        'use_variants' => isset($_POST['use_variants']),
+        'variants' => array_map(fn($i) => [
+            'name' => (string)($_POST['variant_name'][$i] ?? ''),
+            'thickness' => (string)($_POST['variant_thickness'][$i] ?? ''),
+            'price' => (string)($_POST['variant_price'][$i] ?? ''),
+            'stock' => (string)($_POST['variant_stock'][$i] ?? ''),
+            'current' => ($_POST['variant_current'][$i] ?? '0') === '1',
+        ], array_keys((array)($_POST['variant_thickness'] ?? []))),
     ];
 } elseif ($editing) {
     $formValues = [
         'store' => $editing['store'],
-        'category' => $editing['category'],
+        'category' => (function () use ($editing, $categoryRows) {
+            // Show the current tree label for the saved category id.
+            foreach ($categoryRows as $c) {
+                if ($c['id'] === (int)$editing['category_id']) {
+                    return $c['label'];
+                }
+            }
+            return $editing['category'];
+        })(),
         'product_type' => $editing['product_type'],
-        'discount_type' => $editing['discount_type'],
         'measurement_unit' => $editing['measurement_unit'],
-        'taxes' => json_decode($editing['taxes'] ?? '[]', true) ?: [],
-        'default_taxes' => json_decode($editing['default_taxes'] ?? '[]', true) ?: [],
+        'tax_id' => $editing['tax_id'] ? (string)$editing['tax_id'] : '',
         'enabled' => (bool)$editing['enabled'],
         'product_expiry' => (bool)$editing['product_expiry'],
     ];
@@ -321,39 +390,6 @@ include 'header.php';
                             </div>
                         </div>
 
-                        <!-- DISCOUNT TYPE -->
-                        <div class="ap-field">
-
-                            <label for="discountType"
-                                   class="ap-label">
-                                Discount Type
-                            </label>
-
-                            <div class="ap-input-wrapper">
-
-                                <i class="bi bi-chevron-down ap-input-icon"></i>
-
-                                <select class="ap-select"
-                                        id="discountType"
-                                        name="discount_type">
-
-                                    <option value="">
-                                        Select discount type
-                                    </option>
-
-                                    <option value="percentage">
-                                        Percentage (%)
-                                    </option>
-
-                                    <option value="fixed">
-                                        Fixed Amount
-                                    </option>
-
-                                </select>
-
-                            </div>
-                        </div>
-
                         <!-- PRICE -->
                         <div class="ap-field">
 
@@ -398,30 +434,6 @@ include 'header.php';
                                        step="0.01"
                                        placeholder="Enter available stock"
                                        value="<?php echo old('stock'); ?>">
-
-                            </div>
-                        </div>
-
-                        <!-- DISCOUNT VALUE -->
-                        <div class="ap-field">
-
-                            <label for="discountValue"
-                                   class="ap-label">
-                                Discount Value
-                            </label>
-
-                            <div class="ap-input-wrapper">
-
-                                <i class="bi bi-percent ap-input-icon"></i>
-
-                                <input type="number"
-                                       class="ap-input"
-                                       id="discountValue"
-                                       name="discount_value"
-                                       min="0"
-                                       step="0.01"
-                                       placeholder="Enter discount value"
-                                       value="<?php echo old('discount_value'); ?>">
 
                             </div>
                         </div>
@@ -610,9 +622,9 @@ include 'header.php';
                                         Select category
                                     </option>
 
-                                    <?php foreach ($categories as $category): ?>
-                                        <option value="<?php echo htmlspecialchars($category); ?>">
-                                            <?php echo htmlspecialchars($category); ?>
+                                    <?php foreach ($categoryRows as $category): ?>
+                                        <option value="<?php echo e($category['label']); ?>">
+                                            <?php echo str_repeat('&nbsp;&nbsp;&nbsp;', $category['depth']) . e($category['name']); ?>
                                         </option>
                                     <?php endforeach; ?>
 
@@ -652,89 +664,37 @@ include 'header.php';
                             </div>
                         </div>
 
-                        <!-- TAXES -->
+                        <!-- TAX (GST rate from the Taxes page) -->
                         <div class="ap-field">
 
-                            <label class="ap-label">
-                                Taxes
+                            <label for="productTax" class="ap-label">
+                                Tax (GST)
                             </label>
 
-                            <div class="ap-tax-container">
-
-                                <div class="ap-tax-heading">
-                                    Select one or more taxes.
-                                </div>
-
-                                <?php foreach ($taxes as $taxKey => $taxName): ?>
-
-                                <label class="ap-tax-item">
-
-                                    <input type="checkbox"
-                                           class="ap-tax-check"
-                                           name="taxes[]"
-                                           value="<?php echo htmlspecialchars($taxKey); ?>">
-
-                                    <span>
-                                        <span class="ap-tax-name d-block">
-                                            <?php echo htmlspecialchars($taxName); ?>
-                                        </span>
-
-                                        <span class="ap-tax-type d-block">
-                                            <?php echo str_contains($taxName, 'Integrated')
-                                                ? 'Integrated'
-                                                : (str_contains($taxName, 'Central')
-                                                    ? 'Central'
-                                                    : 'Tax'); ?>
-                                        </span>
-                                    </span>
-
-                                </label>
-
-                                <?php endforeach; ?>
-
+                            <div class="ap-input-wrapper">
+                                <i class="bi bi-chevron-down ap-input-icon"></i>
+                                <select class="ap-select" id="productTax" name="tax_id">
+                                    <option value="" data-rate="0">No tax (0%)</option>
+                                    <?php foreach ($gstRates as $t): ?>
+                                        <option value="<?php echo (int)$t['id']; ?>" data-rate="<?php echo e($t['rate']); ?>">
+                                            <?php echo e($t['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
-                        </div>
 
-                        <!-- DEFAULT TAXES -->
-                        <div class="ap-field">
-
-                            <label class="ap-label">
-                                Default Taxes
-                            </label>
-
-                            <div class="ap-tax-container">
-
-                                <div class="ap-tax-heading">
-                                    Select one or more default taxes.
+                            <div class="ap-tax-container mt-2" style="padding:12px 14px">
+                                <div class="d-flex justify-content-between small py-1">
+                                    <span><i class="bi bi-geo-alt-fill text-success"></i> Inside state (<?php echo e(COMPANY_STATE); ?>)</span>
+                                    <b id="taxSplitIn">-</b>
                                 </div>
-
-                                <?php foreach ($taxes as $taxKey => $taxName): ?>
-
-                                <label class="ap-tax-item">
-
-                                    <input type="checkbox"
-                                           class="ap-tax-check"
-                                           name="default_taxes[]"
-                                           value="<?php echo htmlspecialchars($taxKey); ?>">
-
-                                    <span>
-                                        <span class="ap-tax-name d-block">
-                                            <?php echo htmlspecialchars($taxName); ?>
-                                        </span>
-
-                                        <span class="ap-tax-type d-block">
-                                            <?php echo str_contains($taxName, 'Integrated')
-                                                ? 'Integrated'
-                                                : (str_contains($taxName, 'Central')
-                                                    ? 'Central'
-                                                    : 'Tax'); ?>
-                                        </span>
-                                    </span>
-
-                                </label>
-
-                                <?php endforeach; ?>
-
+                                <div class="d-flex justify-content-between small py-1">
+                                    <span><i class="bi bi-truck text-primary"></i> Outside state</span>
+                                    <b id="taxSplitOut">-</b>
+                                </div>
+                            </div>
+                            <div class="form-text">
+                                Rates come from the <a href="taxes.php">Taxes</a> page. Quotations and invoices use this rate automatically.
                             </div>
                         </div>
 
@@ -802,6 +762,98 @@ include 'header.php';
 
             </div>
 
+            <!-- MULTIPLE THICKNESSES (add + edit) -->
+            <div class="ap-card-body pt-0">
+                <div class="tv-box" id="tvBox">
+                    <label class="tv-toggle">
+                        <input type="checkbox" id="useVariants" name="use_variants" value="1">
+                        <span class="tv-switch"></span>
+                        <span>
+                            <?php if ($editing): ?>
+                            <strong>Add more thicknesses of this product</strong>
+                            <small>This product stays as the first row (updated). Every other thickness is created as a new product with the same details.</small>
+                            <?php else: ?>
+                            <strong>Add multiple thicknesses at once</strong>
+                            <small>Example: Marine Plywood in 6, 9, 12, 18, 19 mm &mdash; one product is created for each thickness.</small>
+                            <?php endif; ?>
+                        </span>
+                    </label>
+
+                    <div class="tv-body" id="tvBody" hidden>
+                        <div class="tv-entry">
+                            <div class="tv-chips" id="tvChips">
+                                <input type="text" id="tvInput" placeholder="Type thickness and press Enter (or 6, 9, 12, 18, 19)">
+                            </div>
+                            <select id="tvUnit" class="tv-unit" title="Unit added to each thickness">
+                                <option value="mm">mm</option>
+                                <option value="inch">inch</option>
+                                <option value="ft">ft</option>
+                                <option value="">no unit</option>
+                            </select>
+                            <button type="button" class="tv-add" id="tvAddBtn"><i class="bi bi-plus-lg"></i> Add</button>
+                        </div>
+                        <div class="tv-quick">
+                            Quick:
+                            <button type="button" data-list="4,6,9,12,16,18,19,25">Plywood (4&ndash;25 mm)</button>
+                            <button type="button" data-list="6,9,12,18,19">6, 9, 12, 18, 19 mm</button>
+                            <button type="button" data-list="8,12,18,25">Block board</button>
+                            <button type="button" id="tvClear" class="tv-clear">Clear all</button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="tv-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:110px">Thickness</th>
+                                        <th>Product Name</th>
+                                        <th style="width:150px">Price</th>
+                                        <th style="width:150px">Stock</th>
+                                        <th style="width:44px"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tvRows"></tbody>
+                            </table>
+                        </div>
+                        <p class="tv-note" id="tvNote">Category, GST, HSN, size, unit and store above are copied to every thickness. <?php echo $editing ? "Empty price uses the price above; new thicknesses start with 0 stock unless you type it." : "Empty price / stock uses the values above."; ?></p>
+                    </div>
+                </div>
+            </div>
+            <style>
+                .tv-box{border:1px dashed #b9cdf0;border-radius:12px;background:#f7faff;padding:16px 18px}
+                .tv-toggle{display:flex;gap:12px;align-items:center;cursor:pointer;margin:0}
+                .tv-toggle input{display:none}
+                .tv-toggle strong{display:block;font-size:14px;color:#1d2f4a}
+                .tv-toggle small{color:#6b7c95;font-size:12.5px}
+                .tv-switch{flex:0 0 42px;height:24px;border-radius:12px;background:#cdd6e3;position:relative;transition:.2s}
+                .tv-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+                .tv-toggle input:checked + .tv-switch{background:#1479ff}
+                .tv-toggle input:checked + .tv-switch::after{left:21px}
+                .tv-body{margin-top:16px}
+                .tv-entry{display:flex;gap:8px;flex-wrap:wrap}
+                .tv-chips{flex:1 1 320px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:46px;border:1px solid #dfe6ef;border-radius:9px;background:#fff;padding:6px 10px}
+                .tv-chips input{flex:1;min-width:160px;border:0;outline:0;font-size:14px;background:transparent}
+                .tv-chip{background:#e8f1ff;color:#0f5fcc;border-radius:20px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+                .tv-chip button{border:0;background:transparent;color:#0f5fcc;line-height:1;padding:0 3px;font-size:15px}
+                .tv-unit{height:46px;border:1px solid #dfe6ef;border-radius:9px;padding:0 10px;background:#fff}
+                .tv-add{height:46px;border:0;border-radius:9px;background:#1479ff;color:#fff;padding:0 16px;font-weight:600}
+                .tv-quick{margin:10px 0 14px;font-size:12.5px;color:#6b7c95;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+                .tv-quick button{border:1px solid #d3deee;background:#fff;border-radius:20px;padding:3px 11px;font-size:12.5px;color:#2b4366}
+                .tv-quick button:hover{border-color:#1479ff;color:#1479ff}
+                .tv-quick .tv-clear{color:#c2343c;border-color:#f1c9cc}
+                .tv-table{width:100%;border-collapse:separate;border-spacing:0 6px}
+                .tv-table th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#6b7c95;padding:0 6px}
+                .tv-table td{padding:0 6px}
+                .tv-table td input{width:100%;height:40px;border:1px solid #dfe6ef;border-radius:8px;padding:6px 10px;font-size:14px;background:#fff}
+                .tv-table td input:focus{border-color:#1479ff;outline:0;box-shadow:0 0 0 3px rgba(20,121,255,.09)}
+                .tv-table .tv-thk{font-weight:700;color:#0f5fcc}
+                .tv-table .tv-del{border:0;background:#fff0f0;color:#c2343c;width:36px;height:36px;border-radius:8px}
+                .tv-table tr.tv-empty td{text-align:center;color:#94a3b8;padding:14px;border:1px dashed #dfe6ef;border-radius:8px}
+                .tv-badge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;color:#0f7a3d;background:#e5f7ec;border-radius:10px;padding:1px 8px}
+                .tv-badge.new{color:#0f5fcc;background:#e8f1ff}
+                .tv-table tr.tv-current td input{border-color:#9fd9b6;background:#f6fdf9}
+                .tv-note{font-size:12.5px;color:#6b7c95;margin:6px 0 0}
+            </style>
+
             <!-- FORM FOOTER -->
             <div class="ap-card-footer">
 
@@ -841,7 +893,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const formValues = <?php echo json_encode((object)$formValues, json_flags()); ?>;
     const productForm = document.getElementById("addProductForm");
 
-    ["store", "category", "product_type", "discount_type", "measurement_unit"].forEach(field => {
+    ["store", "category", "product_type", "measurement_unit"].forEach(field => {
         const select = productForm.elements[field];
         if (!select || !formValues[field]) return;
         // Keep values saved earlier (e.g. old store/type names) selectable when editing.
@@ -851,12 +903,17 @@ document.addEventListener("DOMContentLoaded", function () {
         select.value = formValues[field];
     });
 
-    ["taxes", "default_taxes"].forEach(field => {
-        if (!Array.isArray(formValues[field])) return;
-        productForm.querySelectorAll(`input[name="${field}[]"]`).forEach(box => {
-            box.checked = formValues[field].includes(box.value);
-        });
-    });
+    // GST: pre-select and show how it splits inside / outside the state.
+    const taxSelect = document.getElementById("productTax");
+    if (formValues.tax_id) taxSelect.value = formValues.tax_id;
+    function showTaxSplit() {
+        const rate = Number(taxSelect.selectedOptions[0]?.dataset.rate || 0);
+        const p = v => (Math.round(v * 100) / 100).toString();
+        document.getElementById("taxSplitIn").textContent = `CGST ${p(rate / 2)}% + SGST ${p(rate / 2)}%`;
+        document.getElementById("taxSplitOut").textContent = `IGST ${p(rate)}%`;
+    }
+    taxSelect.addEventListener("change", showTaxSplit);
+    showTaxSplit();
 
     if ("enabled" in formValues) {
         document.getElementById("productEnabled").checked = !!formValues.enabled;
@@ -921,39 +978,174 @@ document.addEventListener("DOMContentLoaded", function () {
         container.classList.toggle("off", !this.checked);
     });
 
-    // Discount validation.
-    const discountType =
-        document.getElementById("discountType");
+    // Multiple thicknesses: one product row per thickness.
+    const useVariants = document.getElementById("useVariants");
+    if (useVariants) {
+        const tvBody = document.getElementById("tvBody");
+        const tvRows = document.getElementById("tvRows");
+        const tvInput = document.getElementById("tvInput");
+        const tvChips = document.getElementById("tvChips");
+        const tvUnit = document.getElementById("tvUnit");
+        const nameInput = document.getElementById("productName");
+        const priceInput = document.getElementById("productPrice");
+        const stockInput = document.getElementById("productStock");
+        const thicknessInput = document.getElementById("thickness");
+        const saveLabel = document.getElementById("saveProductBtn");
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+        const isEdit = <?php echo $editing ? "true" : "false"; ?>;
+        const autoName = t => ((nameInput.value.trim() || "Product") + " " + t).trim();
 
-    const discountValue =
-        document.getElementById("discountValue");
-
-    function validateDiscount() {
-
-        const value = Number(discountValue.value);
-
-        if (discountType.value === "percentage" &&
-            discountValue.value !== "" && value > 100) {
-
-            discountValue.setCustomValidity(
-                "Percentage discount cannot exceed 100."
-            );
-
-        } else {
-
-            discountValue.setCustomValidity("");
+        function parseList(text) {
+            const unit = tvUnit.value;
+            return text.split(/[,;\n]+|\s+(?=\d)/)
+                .map(s => s.trim())
+                .filter(s => s && !/^(mm|inch|in|ft)$/i.test(s))
+                .map(s => {
+                    const m = s.match(/^(\d+(?:\.\d+)?)\s*(mm|inch|in|ft)?$/i);
+                    if (!m) return s;
+                    const u = m[2] ? (m[2].toLowerCase() === "in" ? "inch" : m[2].toLowerCase()) : unit;
+                    return u ? `${m[1]} ${u}` : m[1];
+                });
         }
+
+        function existing() {
+            return [...tvRows.querySelectorAll(".tv-thk")].map(i => i.value.trim().toLowerCase());
+        }
+
+        function addRow(v = {}) {
+            tvRows.querySelector(".tv-empty")?.remove();
+            const tr = document.createElement("tr");
+            const auto = !v.name || v.name === autoName(v.thickness || "");
+            const current = !!(isEdit && v.current);
+            // While editing, new thicknesses start at 0 stock (server does the same).
+            const stockHint = isEdit && !current ? "0" : (stockInput.value || "0");
+            tr.innerHTML = `
+                <td><input type="hidden" name="variant_current[]" value="${current ? "1" : "0"}">
+                    <input class="tv-thk" name="variant_thickness[]" value="${esc(v.thickness || "")}" required></td>
+                <td><input class="tv-name" name="variant_name[]" value="${esc(v.name || autoName(v.thickness || ""))}" maxlength="200">
+                    ${current ? '<span class="tv-badge">This product &middot; updated</span>' : (isEdit ? '<span class="tv-badge new">New product</span>' : "")}</td>
+                <td><input type="number" name="variant_price[]" min="0" step="0.01" value="${esc(v.price || "")}" placeholder="${esc(priceInput.value || "0")}"></td>
+                <td><input type="number" name="variant_stock[]" min="0" step="0.01" value="${esc(v.stock || "")}" placeholder="${esc(stockHint)}"></td>
+                <td>${current ? "" : '<button type="button" class="tv-del" title="Remove"><i class="bi bi-trash"></i></button>'}</td>`;
+            tr.dataset.auto = auto ? "1" : "";
+            if (current) tr.classList.add("tv-current");
+            tvRows.appendChild(tr);
+            refresh();
+        }
+
+        function addFromInput() {
+            const have = existing();
+            parseList(tvInput.value).forEach(t => {
+                if (have.includes(t.toLowerCase())) return;
+                have.push(t.toLowerCase());
+                addRow({ thickness: t });
+            });
+            tvInput.value = "";
+        }
+
+        function refresh() {
+            const rows = tvRows.querySelectorAll("tr:not(.tv-empty)");
+            if (!rows.length) {
+                tvRows.innerHTML = '<tr class="tv-empty"><td colspan="5">No thickness added yet. Type 6, 9, 12, 18, 19 above and press Enter.</td></tr>';
+            }
+            // Chips mirror the table rows.
+            tvChips.querySelectorAll(".tv-chip").forEach(c => c.remove());
+            rows.forEach((tr, i) => {
+                const val = tr.querySelector(".tv-thk").value.trim();
+                if (!val) return;
+                const chip = document.createElement("span");
+                chip.className = "tv-chip";
+                if (tr.classList.contains("tv-current")) {
+                    chip.innerHTML = `${esc(val)} <i class="bi bi-pencil-fill" title="This product"></i>`;
+                } else {
+                    chip.innerHTML = `${esc(val)}<button type="button" title="Remove">&times;</button>`;
+                    chip.querySelector("button").onclick = () => { tr.remove(); refresh(); };
+                }
+                tvChips.insertBefore(chip, tvInput);
+            });
+            const n = rows.length;
+            const added = n - tvRows.querySelectorAll("tr.tv-current").length;
+            if (useVariants.checked && isEdit) {
+                saveLabel.innerHTML = `<i class="bi bi-floppy"></i> Update${added ? ` + Add ${added} New` : " Product"}`;
+            } else if (useVariants.checked) {
+                saveLabel.innerHTML = `<i class="bi bi-floppy"></i> Save ${n} Product${n === 1 ? "" : "s"}`;
+            } else {
+                saveLabel.innerHTML = '<i class="bi bi-floppy"></i> Save Product';
+            }
+        }
+
+        function toggle() {
+            const on = useVariants.checked;
+            tvBody.hidden = !on;
+            document.getElementById("tvBox").style.borderStyle = on ? "solid" : "dashed";
+            thicknessInput.disabled = on;
+            thicknessInput.placeholder = on ? "Set per row below" : "Enter thickness";
+            tvRows.querySelectorAll("input").forEach(i => i.disabled = !on);
+            // Editing: start with this product as row 1; a typed list like "6, 9, 12 mm" becomes extra rows.
+            if (on && isEdit && !tvRows.querySelector("tr.tv-current")) {
+                const list = parseList(thicknessInput.value || "");
+                const first = list.shift() || "";
+                const base = nameInput.value.trim();
+                const hasThk = first && base.toLowerCase().includes(first.toLowerCase());
+                tvRows.querySelector(".tv-empty")?.remove();
+                const keep = [...tvRows.children];
+                addRow({ current: true, thickness: first, name: hasThk || !first ? base : autoName(first) });
+                keep.forEach(tr => tvRows.appendChild(tr));
+                const have = existing();
+                list.forEach(t => { if (!have.includes(t.toLowerCase())) { have.push(t.toLowerCase()); addRow({ thickness: t }); } });
+                tvRows.querySelectorAll("tr.tv-current input").forEach(i => i.disabled = false);
+            }
+            refresh();
+            if (on && !tvRows.querySelector("tr:not(.tv-empty)")) tvInput.focus();
+        }
+
+        tvInput.addEventListener("keydown", e => {
+            if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addFromInput(); }
+            else if (e.key === "Backspace" && !tvInput.value) {
+                const last = [...tvRows.querySelectorAll("tr:not(.tv-empty):not(.tv-current)")].pop();
+                if (last) { last.remove(); refresh(); }
+            }
+        });
+        tvInput.addEventListener("paste", () => setTimeout(addFromInput, 0));
+        tvInput.addEventListener("blur", () => { if (tvInput.value.trim()) addFromInput(); });
+        document.getElementById("tvAddBtn").onclick = addFromInput;
+        document.querySelectorAll(".tv-quick [data-list]").forEach(b => b.onclick = () => {
+            tvInput.value = b.dataset.list; addFromInput();
+        });
+        document.getElementById("tvClear").onclick = () => {
+            tvRows.querySelectorAll("tr:not(.tv-current)").forEach(tr => tr.remove());
+            refresh();
+        };
+
+        tvRows.addEventListener("click", e => {
+            if (e.target.closest(".tv-del")) { e.target.closest("tr").remove(); refresh(); }
+        });
+        tvRows.addEventListener("input", e => {
+            const tr = e.target.closest("tr");
+            if (e.target.classList.contains("tv-name")) tr.dataset.auto = "";
+            if (e.target.classList.contains("tv-thk")) {
+                if (tr.dataset.auto) tr.querySelector(".tv-name").value = autoName(e.target.value.trim());
+                refresh();
+            }
+        });
+        // Names follow the base product name until edited by hand.
+        nameInput.addEventListener("input", () => {
+            tvRows.querySelectorAll("tr:not(.tv-empty)").forEach(tr => {
+                if (tr.dataset.auto) tr.querySelector(".tv-name").value = autoName(tr.querySelector(".tv-thk").value.trim());
+            });
+        });
+        [priceInput, stockInput].forEach((inp, k) => inp.addEventListener("input", () => {
+            tvRows.querySelectorAll("tr:not(.tv-empty)").forEach(tr => {
+                tr.querySelectorAll('input[type="number"]')[k].placeholder = inp.value || "0";
+            });
+        }));
+        useVariants.addEventListener("change", toggle);
+
+        // Restore after a validation error.
+        (formValues.variants || []).forEach(v => addRow(v));
+        useVariants.checked = !!formValues.use_variants;
+        toggle();
     }
-
-    discountType.addEventListener(
-        "change",
-        validateDiscount
-    );
-
-    discountValue.addEventListener(
-        "input",
-        validateDiscount
-    );
 
     // Prevent duplicate form submissions.
     const form =
@@ -964,11 +1156,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
     form.addEventListener("submit", function(event) {
 
-        validateDiscount();
-
         if (!form.checkValidity()) {
             event.preventDefault();
             form.reportValidity();
+            return;
+        }
+
+        if (useVariants && useVariants.checked &&
+            !document.querySelector("#tvRows tr:not(.tv-empty)")) {
+            event.preventDefault();
+            App.toast("Add at least one thickness, or switch off \"Add multiple thicknesses\".", "error");
+            document.getElementById("tvInput").focus();
             return;
         }
 

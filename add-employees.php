@@ -66,6 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'This email or mobile is already used to log in to another business. Use a different one.';
     }
 
+    // Page access. Only an administrator can create another administrator, and an
+    // employee can only give access they have themselves.
+    $isAdminUser = (current_user()['role'] ?? '') === 'admin';
+    $role = ($isAdminUser && ($_POST['role'] ?? '') === 'admin') ? 'admin' : 'staff';
+    $permissions = clean_permissions($_POST['permissions'] ?? []);
+    $myPermissions = granted_modules();
+    if ($myPermissions !== null) {
+        $permissions = array_values(array_intersect($permissions, $myPermissions));
+    }
+    if ($role === 'staff' && !$permissions) {
+        $errors[] = 'Select at least one page this employee can access.';
+    }
+
     if (empty($errors)) {
 
         db_insert('users', [
@@ -74,7 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email' => $email,
             'mobile' => $mobile ?: null,
             'dob' => $dob ?: null,
-            'role' => 'staff',
+            'role' => $role,
+            'permissions' => $role === 'admin' ? null : json_encode(full_permission_map($permissions)),
             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'enabled' => 1,
         ]);
@@ -85,6 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+
+$isAdminUser = (current_user()['role'] ?? '') === 'admin';
+$grantable = granted_modules(); // null = can grant everything
+$postedRole = $_POST['role'] ?? 'staff';
+$postedPerms = $_SERVER['REQUEST_METHOD'] === 'POST'
+    ? clean_permissions($_POST['permissions'] ?? [])
+    : ['dashboard', 'quotations', 'customers'];
 
 $pageTitle = 'Add Employee';
 include 'header.php';
@@ -371,6 +392,53 @@ include 'header.php';
 
                 </div>
 
+                <!-- ACCESS / PERMISSIONS -->
+                <div class="ae-field mt-2">
+
+                    <label class="ae-label" for="employeeRole">
+                        Access
+                    </label>
+
+                    <div class="ae-input-wrapper" style="max-width:420px">
+                        <i class="bi bi-shield-lock-fill ae-input-icon"></i>
+                        <select id="employeeRole" name="role" class="ae-input">
+                            <option value="staff" <?php echo $postedRole !== 'admin' ? 'selected' : ''; ?>>
+                                Employee - only selected pages
+                            </option>
+                            <?php if ($isAdminUser): ?>
+                            <option value="admin" <?php echo $postedRole === 'admin' ? 'selected' : ''; ?>>
+                                Administrator - full access
+                            </option>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+
+                    <div id="permissionBox" class="mt-3">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <div class="ae-helper m-0">Tick the pages this employee can open:</div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="permAll">Select all</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="permNone">Clear</button>
+                            </div>
+                        </div>
+                        <div class="row g-2">
+                            <?php foreach (app_modules() as $key => [$label, $icon]): ?>
+                                <?php if ($grantable !== null && !in_array($key, $grantable, true)) continue; ?>
+                                <div class="col-sm-6 col-lg-4 col-xxl-3">
+                                    <label class="d-flex align-items-center gap-2 border rounded-3 px-3 py-2 h-100" style="cursor:pointer">
+                                        <input type="checkbox" class="form-check-input m-0 perm-check"
+                                               name="permissions[]" value="<?php echo e($key); ?>"
+                                               <?php echo in_array($key, $postedPerms, true) ? 'checked' : ''; ?>>
+                                        <i class="bi bi-<?php echo e($icon); ?> text-primary"></i>
+                                        <span><?php echo e($label); ?></span>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                </div>
+
             </div>
 
             <!-- FORM FOOTER -->
@@ -465,12 +533,34 @@ document.addEventListener("DOMContentLoaded", function () {
 
     });
 
+    /* ACCESS: page checkboxes only matter for employees (not administrators) */
+
+    const roleSelect = document.getElementById("employeeRole");
+    const permissionBox = document.getElementById("permissionBox");
+    const permChecks = () => permissionBox.querySelectorAll(".perm-check");
+
+    function togglePermissionBox() {
+        permissionBox.classList.toggle("d-none", roleSelect.value === "admin");
+    }
+    roleSelect.addEventListener("change", togglePermissionBox);
+    togglePermissionBox();
+
+    document.getElementById("permAll").addEventListener("click", () => permChecks().forEach(c => c.checked = true));
+    document.getElementById("permNone").addEventListener("click", () => permChecks().forEach(c => c.checked = false));
+
     /* FORM SUBMISSION */
 
     form.addEventListener("submit", function (event) {
 
         if (!form.reportValidity()) {
             event.preventDefault();
+            return;
+        }
+
+        if (roleSelect.value !== "admin" &&
+            ![...permChecks()].some(c => c.checked)) {
+            event.preventDefault();
+            alert("Select at least one page this employee can access.");
             return;
         }
 

@@ -17,6 +17,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/tenant.php';
+require_once __DIR__ . '/permissions.php';
 
 db(); // connect to the logged-in business's database + install schema
 
@@ -93,6 +94,7 @@ if (empty($publicPage)) {
     }
     $_SESSION['user_name'] = $user['name'];
     $_SESSION['user_email'] = $user['email'];
+    enforce_page_access();
 }
 
 company_define();

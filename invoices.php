@@ -26,7 +26,7 @@ function invoices_all(): array
 
     return cast_rows(
         db_all('SELECT i.id, i.invoice_number, i.customer, i.date, i.due_date, i.subtotal, i.discount,
-                       i.tax, i.amount, i.status, o.order_number,
+                       i.tax, i.amount, i.status, i.eway_bill, i.dispatched_through, i.vehicle_no, o.order_number,
                        COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice = i.invoice_number), 0) AS paid
                 FROM invoices i LEFT JOIN orders o ON o.id = i.order_id
                 ORDER BY i.id DESC'),
@@ -996,6 +996,9 @@ include 'header.php';
                 ["Invoice Date", formatDate(invoice.date)],
                 ["Due Date", formatDate(invoice.due_date)],
                 ["Order", invoice.order_number || "-"],
+                ["Eway Bill Number", invoice.eway_bill || "-"],
+                ["Dispatched Through", invoice.dispatched_through || "-"],
+                ["Vehicle Number", invoice.vehicle_no || "-"],
                 ["Taxable Value", formatAmount((invoice.subtotal || 0) - (invoice.discount || 0))],
                 ["GST", formatAmount(invoice.tax || 0)],
                 ["Invoice Amount", formatAmount(invoice.amount)],
@@ -1037,7 +1040,14 @@ include 'header.php';
 
     /* EDIT INVOICE */
 
+    // Edit opens the full invoice editor: customer, products (add / remove),
+    // eway bill, dispatched through, vehicle number, dates, notes.
     function editInvoice(id) {
+        window.location.href = "direct-invoice.php?edit=" + encodeURIComponent(id);
+    }
+
+    // Quick status / due date popup (kept for internal use).
+    function quickEditInvoice(id) {
 
         const invoice = invoices.find(
             item => Number(item.id) === id
