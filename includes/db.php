@@ -767,10 +767,12 @@ function product_stock_stats(): array
             if (!$pid || $qty <= 0) {
                 continue;
             }
+            $isDamaged = ($p['reason'] ?? '') === 'damaged';
             if ($r['status'] === 'Return Approved') {
-                $key = ($p['reason'] ?? '') === 'damaged' ? 'damaged' : 'returned';
+                $key = $isDamaged ? 'damaged' : 'returned';
             } elseif ($r['status'] === 'Return Requested') {
-                $key = 'pending';
+                // Waiting for approval: kept apart so damaged requests show under Damaged.
+                $key = $isDamaged ? 'pending_damaged' : 'pending';
             } else {
                 continue;
             }
@@ -787,11 +789,16 @@ function attach_stock_stats(array $rows): array
     foreach ($rows as &$r) {
         $s = $stats[(int)$r['id']] ?? [];
         $r['sold'] = round($s['sold'] ?? 0, 2);
-        $r['returned'] = round($s['returned'] ?? 0, 2);
-        $r['damaged'] = round($s['damaged'] ?? 0, 2);
+        $approvedReturned = round($s['returned'] ?? 0, 2);
+        // A return shows as soon as it is added (requested or approved; rejected ones are left out):
+        // reason "damaged" -> Damaged, any other reason -> Returned.
         $r['pending_return'] = round($s['pending'] ?? 0, 2);
-        // Total that came into stock = what is left + what went out - what came back.
-        $r['added'] = round((float)$r['stock'] + $r['sold'] - $r['returned'], 2);
+        $r['pending_damaged'] = round($s['pending_damaged'] ?? 0, 2);
+        $r['returned'] = round($approvedReturned + $r['pending_return'], 2);
+        $r['damaged'] = round(($s['damaged'] ?? 0) + $r['pending_damaged'], 2);
+        // Total that came into stock = what is left + what went out - what came back into stock
+        // (only approved good returns are back in stock).
+        $r['added'] = round((float)$r['stock'] + $r['sold'] - $approvedReturned, 2);
     }
     unset($r);
     return $rows;

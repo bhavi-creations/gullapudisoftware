@@ -158,6 +158,9 @@ function request_action(string $page): string
 
     if ($method !== 'POST') {
         // Opening a form page needs add / edit.
+        if ($page === 'returns-damage.php') {
+            return !empty($_GET['edit']) ? 'edit' : (isset($_GET['new']) ? 'add' : 'view');
+        }
         $editParams = ['add-quotation.php' => 'edit', 'add-order.php' => 'edit', 'add-product.php' => 'id', 'add-customer.php' => 'id',
             'direct-invoice.php' => 'edit'];
         if (isset($editParams[$page])) {

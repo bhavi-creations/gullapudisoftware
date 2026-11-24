@@ -284,8 +284,8 @@ include 'header.php';
                         <th>Store</th>
                         <th class="text-end" title="Total stock that came in">Stock In</th>
                         <th class="text-end" title="Sold on invoices">Sold</th>
-                        <th class="text-end" title="Good items returned by customers (back in stock)">Returned</th>
-                        <th class="text-end" title="Damaged items (not back in stock)">Damaged</th>
+                        <th class="text-end" title="Good items returned by customers">Returned</th>
+                        <th class="text-end" title="Damaged items returned (never back in stock)">Damaged</th>
                         <th class="text-end" title="Available now">Available</th>
                         <th>Enabled</th>
                         <th>Featured</th>
@@ -580,7 +580,7 @@ include 'header.php';
 
                     <td class="text-end">${formatNumber(product.added || 0)}</td>
                     <td class="text-end" style="color:#2563eb;font-weight:600">${formatNumber(product.sold || 0)}</td>
-                    <td class="text-end" style="color:#0f766e;font-weight:600">${formatNumber(product.returned || 0)}${product.pending_return ? `<div class="small text-muted" title="Return requests waiting for approval">+${formatNumber(product.pending_return)} pending</div>` : ""}</td>
+                    <td class="text-end" style="color:#0f766e;font-weight:600">${formatNumber(product.returned || 0)}</td>
                     <td class="text-end" style="color:#dc2626;font-weight:600">${formatNumber(product.damaged || 0)}</td>
                     <td class="text-end">
                         <span class="pr-badge ${product.stock <= 0 ? "disabled" : ""}" style="${product.stock > 0 && product.stock <= (product.low_stock_alert || 10) ? "background:#fff4e5;color:#b45309" : ""}">
@@ -720,11 +720,11 @@ include 'header.php';
                     <div style="display:flex;flex-wrap:wrap;gap:8px">
                         ${box("Stock In", product.added, "#0f172a", "Total received")}
                         ${box("Sold", product.sold, "#2563eb", "On invoices")}
-                        ${box("Returned", product.returned, "#0f766e", product.pending_return ? formatNumber(product.pending_return) + " waiting approval" : "Back in stock")}
+                        ${box("Returned", product.returned, "#0f766e", product.pending_return ? "Goes back to stock when approved" : "Back in stock")}
                         ${box("Damaged", product.damaged, "#dc2626", "Not in stock")}
                         ${box("Available Now", stock, stock <= 0 ? "#dc2626" : "#16a34a", stock <= low ? "Low stock" : "Ready to sell")}
                     </div>
-                    <div style="font-size:11.5px;color:#8391a7;margin-top:8px">Stock In − Sold + Returned = Available. Change stock from Edit Product.</div>`;
+                    <div style="font-size:11.5px;color:#8391a7;margin-top:8px">Returns show here as soon as they are added. Good returns go back into Available stock when approved on Returns &amp; Damage; damaged items never do.</div>`;
             })(),
             actions: [
                 { label: "Edit Product", icon: "pencil-fill", tone: "primary", href: "add-product.php?id=" + encodeURIComponent(product.id) },
