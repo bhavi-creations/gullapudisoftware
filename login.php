@@ -7,8 +7,12 @@ if (is_logged_in()) {
     exit;
 }
 
-$error = '';
+$error = !empty($_GET['expired']) ? 'Your session expired. Please sign in again to continue.' : '';
 $email = '';
+$nextPage = trim((string)($_POST['next'] ?? $_GET['next'] ?? ''));
+if (!preg_match('/^[A-Za-z0-9_-]+\.php$/D', $nextPage) || in_array($nextPage, ['login.php', 'logout.php'], true)) {
+    $nextPage = '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
@@ -35,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$user['id']]);
             $pdo->prepare('INSERT INTO activity_log (user_name, module, action) VALUES (?, ?, ?)')
                 ->execute([$user['name'], 'Auth', $user['name'] . ' logged in']);
-            header('Location: dashboard.php');
+            header('Location: ' . ($nextPage !== '' ? $nextPage : 'dashboard.php'));
             exit;
         }
     }
@@ -296,6 +300,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <form method="POST" autocomplete="on">
                 <input type="hidden" name="csrf_token" value="<?php echo e(csrf_token()); ?>">
+                <?php if ($nextPage !== ''): ?>
+                    <input type="hidden" name="next" value="<?php echo e($nextPage); ?>">
+                <?php endif; ?>
 
                 <label class="lg-label" for="email">Username / Mobile</label>
                 <div class="lg-field">

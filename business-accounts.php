@@ -13,6 +13,7 @@ if (!is_super_admin()) {
     exit('Only the main administrator can manage business accounts.');
 }
 
+$autoCreateBusinessDb = IS_LOCAL || cpanel_enabled();
 $errors = [];
 $form = ['business_name' => '', 'owner_name' => '', 'mobile' => '', 'email' => '', 'username' => '', 'db_name' => ''];
 
@@ -54,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($form['db_name'] !== '' && !preg_match('/^[A-Za-z0-9_]{1,64}$/', $form['db_name'])) {
                 $errors[] = 'Database name: letters, numbers and _ only (exactly as shown in the hosting panel).';
+            }
+            if (!$autoCreateBusinessDb && $form['db_name'] === '') {
+                $errors[] = 'Create a new empty database in the hosting panel, add the application MySQL user with ALL PRIVILEGES, and enter its full database name.';
             }
             $hasLogo = !empty($_FILES['logo']['name']);
             if ($hasLogo && ($logoError = logo_check($_FILES['logo']))) {
@@ -446,12 +450,14 @@ include 'header.php';
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold" for="bPass">Password * <span class="ba-sub">(min 8 characters)</span></label>
-                        <input type="text" class="form-control" id="bPass" name="password" minlength="8" maxlength="72" required>
+                        <input type="password" class="form-control" id="bPass" name="password" minlength="8" maxlength="72" required autocomplete="new-password">
                     </div>
                     <div class="col-12">
-                        <label class="form-label fw-semibold" for="bDb">Database Name <span class="ba-sub">(optional - leave empty, a new database is created automatically)</span></label>
-                        <input type="text" class="form-control" id="bDb" name="db_name" maxlength="64" pattern="[A-Za-z0-9_]{1,64}" placeholder="Leave empty to create automatically" value="<?php echo e($form['db_name']); ?>">
-                        <div class="ba-sub mt-1">On cPanel / shared hosting: MySQL Databases &rarr; create a new database &rarr; add user <b><?php echo e(DB_USER); ?></b> with ALL PRIVILEGES &rarr; type the full database name here.</div>
+                        <label class="form-label fw-semibold" for="bDb">Database Name <?php if ($autoCreateBusinessDb): ?><span class="ba-sub">(optional - leave empty to create automatically)</span><?php else: ?><span class="text-danger">*</span><?php endif; ?></label>
+                        <input type="text" class="form-control" id="bDb" name="db_name" maxlength="64" pattern="[A-Za-z0-9_]{1,64}" placeholder="<?php echo $autoCreateBusinessDb ? 'Leave empty to create automatically' : 'Enter the full database name'; ?>" value="<?php echo e($form['db_name']); ?>" <?php echo $autoCreateBusinessDb ? '' : 'required'; ?>>
+                        <?php if (!$autoCreateBusinessDb): ?>
+                            <div class="ba-sub mt-1">In cPanel, create a new empty database, add MySQL user <b><?php echo e(DB_USER); ?></b> to it with ALL PRIVILEGES, then enter the full database name here.</div>
+                        <?php endif; ?>
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold" for="bLogo">Business Logo <span class="ba-sub">(optional - printed on invoices)</span></label>
@@ -576,7 +582,7 @@ include 'header.php';
                 <input type="hidden" name="action" value="reset">
                 <input type="hidden" name="id" id="resetId">
                 <p class="mb-2">New administrator password for <strong id="resetName"></strong>:</p>
-                <input type="text" class="form-control" name="password" minlength="8" maxlength="72" required>
+                <input type="password" class="form-control" name="password" minlength="8" maxlength="72" required autocomplete="new-password">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>

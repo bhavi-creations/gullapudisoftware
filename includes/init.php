@@ -11,7 +11,16 @@
 */
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
+    $requestIsHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+        || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443
+        || strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $requestIsHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
@@ -86,10 +95,20 @@ if (empty($publicPage)) {
     }
     if (!$user || !(int)$user['enabled']) {
         $_SESSION = [];
-        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' || !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+        $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+            || ($method === 'POST' && !str_contains($accept, 'text/html'));
+        if ($isAjax) {
             json_response(['success' => false, 'message' => 'Please login again.'], 401);
         }
-        header('Location: login.php');
+
+        $nextPage = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+        $loginUrl = 'login.php?expired=1';
+        if (preg_match('/^[A-Za-z0-9_-]+\.php$/D', $nextPage) && $nextPage !== 'login.php') {
+            $loginUrl .= '&next=' . rawurlencode($nextPage);
+        }
+        header('Location: ' . $loginUrl);
         exit;
     }
     $_SESSION['user_name'] = $user['name'];
