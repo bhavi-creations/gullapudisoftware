@@ -266,18 +266,20 @@ function business_create(array $data): int
         ->execute([$data['business_name'], $data['owner_name'], $data['mobile'] ?: null, $data['username'], 'pending_' . bin2hex(random_bytes(8))]);
     $id = (int)$m->lastInsertId();
     $given = trim((string)($data['db_name'] ?? ''));
+
     // The main / master database can never hold another business - when it is typed
     // by mistake, simply create a new database automatically instead.
     if (in_array(strtolower($given), [strtolower(DB_NAME), strtolower(MASTER_DB_NAME)], true)) {
         $given = '';
     }
+
     $dbName = $given !== '' ? $given : business_auto_db_name($id);
     $created = false;   // true when this function made the database itself
     $pdo = null;        // set once the (empty) database is open
 
     try {
         if ($given !== '') {
-            // A database made in the hosting panel (cPanel etc.) - must exist and be empty.
+            // A database made in the hosting panel - must exist and be empty.
             $pdo = business_existing_db($given);
         } else {
             $pdo = business_db_make($dbName);
@@ -330,7 +332,7 @@ function business_create(array $data): int
  */
 function business_auto_db_name(int $id): string
 {
-    $prefix = (!IS_LOCAL && CPANEL_USER !== '') ? CPANEL_USER . '_biz_' : TENANT_DB_PREFIX;
+    $prefix = (!IS_LOCAL && defined('CPANEL_USER') && CPANEL_USER !== '') ? CPANEL_USER . '_biz_' : TENANT_DB_PREFIX;
     $name = $prefix . $id;
     // Never reuse a database that already has tables (e.g. left from a deleted business).
     for ($n = 2; business_db_in_use($name); $n++) {
@@ -353,9 +355,6 @@ function business_db_in_use(string $name): bool
 
 /**
  * Creates a new empty database for one business and opens it.
- *  1. Directly with CREATE DATABASE (XAMPP / VPS / hosting that allows it).
- *  2. Through the cPanel API when CPANEL_USER + CPANEL_TOKEN are set in config.php
- *     (shared hosting, where the MySQL user cannot create databases).
  */
 function business_db_make(string $name): PDO
 {
@@ -363,6 +362,8 @@ function business_db_make(string $name): PDO
         throw new RuntimeException('Database name: letters, numbers and _ only.');
     }
     try {
+        $safeName = str_replace('`', '', $name);
+        master()->exec("CREATE DATABASE IF NOT EXISTS `{$safeName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $pdo = db_connect($name, true);
     } catch (PDOException $e) {
         if (!cpanel_enabled()) {
@@ -404,12 +405,14 @@ function business_db_drop(string $name): void
  --------------------------------------------------------------- */
 function cpanel_enabled(): bool
 {
-    return !IS_LOCAL && CPANEL_USER !== '' && CPANEL_TOKEN !== '';
+    return !IS_LOCAL
+        && defined('CPANEL_USER') && CPANEL_USER !== ''
+        && defined('CPANEL_TOKEN') && CPANEL_TOKEN !== '';
 }
 
 function cpanel_call(string $function, array $params): array
 {
-    $host = CPANEL_HOST !== '' ? CPANEL_HOST : 'localhost';
+    $host = (defined('CPANEL_HOST') && CPANEL_HOST !== '') ? CPANEL_HOST : 'localhost';
     $url = 'https://' . $host . ':2083/execute/' . $function . '?' . http_build_query($params);
     $headers = ['Authorization: cpanel ' . CPANEL_USER . ':' . CPANEL_TOKEN];
 
@@ -419,7 +422,6 @@ function cpanel_call(string $function, array $params): array
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_TIMEOUT => 30,
-            // cPanel on "localhost" uses a certificate for the server name.
             CURLOPT_SSL_VERIFYPEER => $host !== 'localhost',
             CURLOPT_SSL_VERIFYHOST => $host !== 'localhost' ? 2 : 0,
         ]);
@@ -457,16 +459,13 @@ function business_existing_db(string $name): PDO
         throw new RuntimeException('Database ' . $name . ' is already used by another business.');
     }
     try {
-        // XAMPP / VPS: creates it when it does not exist yet.
         $pdo = db_connect($name, true);
     } catch (PDOException $e) {
         $pdo = null;
         if (cpanel_enabled()) {
-            // cPanel: create the database (if missing) and give our MySQL user access to it.
             try {
                 cpanel_call('Mysql/create_database', ['name' => $name]);
             } catch (RuntimeException $ignored) {
-                // Already exists - only the privileges are missing.
             }
             cpanel_call('Mysql/set_privileges_on_database', ['user' => DB_USER, 'database' => $name, 'privileges' => 'ALL PRIVILEGES']);
             try {
@@ -508,7 +507,6 @@ function business_db_reset_leftover(PDO $pdo, string $name): void
             [$file] = backup_create($pdo, $backupDir);
             @rename($backupDir . '/' . $file, $backupDir . '/' . $name . '_old_' . $file);
         } catch (Throwable $e) {
-            // Backup not possible - continue, the old data belongs to no account.
         }
     }
     business_db_clear($pdo);
@@ -536,10 +534,8 @@ function business_db_error(PDOException $e): Throwable
     $msg = $e->getMessage();
     if (str_contains($msg, '1044') || str_contains($msg, '1045') || stripos($msg, 'denied') !== false) {
         return new RuntimeException('Your hosting does not allow the software to create a database by itself. '
-            . 'Fix (once): cPanel > Manage API Tokens > create a token, then set CPANEL_USER and CPANEL_TOKEN in includes/config.php - '
-            . 'after that every business gets its own database automatically. '
-            . 'Or: cPanel > MySQL Databases, create a new empty database, add the user "' . DB_USER
-            . '" with ALL PRIVILEGES, and type that NEW database name in "Database Name".');
+            . 'DB Error: ' . $msg . ' | '
+            . 'Or create a new empty database in hosting panel and enter its name in "Database Name".');
     }
     return $e;
 }
