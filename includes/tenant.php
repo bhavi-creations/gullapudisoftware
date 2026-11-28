@@ -265,26 +265,13 @@ function business_create(array $data): int
     $m->prepare("INSERT INTO accounts (business_name, owner_name, mobile, username, db_name, status) VALUES (?, ?, ?, ?, ?, 'active')")
         ->execute([$data['business_name'], $data['owner_name'], $data['mobile'] ?: null, $data['username'], 'pending_' . bin2hex(random_bytes(8))]);
     $id = (int)$m->lastInsertId();
-    $given = trim((string)($data['db_name'] ?? ''));
-
-    // The main / master database can never hold another business - when it is typed
-    // by mistake, simply create a new database automatically instead.
-    if (in_array(strtolower($given), [strtolower(DB_NAME), strtolower(MASTER_DB_NAME)], true)) {
-        $given = '';
-    }
-
-    $dbName = $given !== '' ? $given : business_auto_db_name($id);
-    $created = false;   // true when this function made the database itself
+    $dbName = business_auto_db_name((string)$data['business_name'], $id);
+    $created = false;
     $pdo = null;        // set once the (empty) database is open
 
     try {
-        if ($given !== '') {
-            // A database made in the hosting panel - must exist and be empty.
-            $pdo = business_existing_db($given);
-        } else {
-            $pdo = business_db_make($dbName);
-            $created = true;
-        }
+        $pdo = business_db_make($dbName);
+        $created = true;
         db_install($pdo);
 
         // db_install() adds a default administrator - turn it into the owner's login.
@@ -327,18 +314,46 @@ function business_create(array $data): int
 }
 
 /**
- * Name for an automatically created business database.
- * cPanel only allows databases that start with "<cpanel user>_".
+ * Creates a safe, unique database name from the business name.
+ * cPanel accounts may require their account prefix on the database name.
  */
-function business_auto_db_name(int $id): string
+function business_auto_db_name(string $businessName, int $id): string
 {
-    $prefix = (!IS_LOCAL && defined('CPANEL_USER') && CPANEL_USER !== '') ? CPANEL_USER . '_biz_' : TENANT_DB_PREFIX;
-    $name = $prefix . $id;
-    // Never reuse a database that already has tables (e.g. left from a deleted business).
-    for ($n = 2; business_db_in_use($name); $n++) {
-        $name = $prefix . $id . '_' . $n;
+    $asciiName = function_exists('iconv')
+        ? (iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $businessName) ?: $businessName)
+        : $businessName;
+    $slug = strtolower((string)preg_replace('/[^A-Za-z0-9]+/', '_', $asciiName));
+    $slug = trim($slug, '_');
+    if ($slug === '') {
+        $slug = 'business';
     }
-    return $name;
+
+    $prefix = '';
+    if (!IS_LOCAL && defined('CPANEL_USER') && CPANEL_USER !== '') {
+        $safePrefix = strtolower((string)preg_replace('/[^A-Za-z0-9_]+/', '', CPANEL_USER));
+        if ($safePrefix !== '') {
+            $prefix = $safePrefix . '_';
+        }
+    }
+
+    $maxLength = !IS_LOCAL && $prefix !== '' ? 63 : 64;
+    $base = substr($prefix . $slug, 0, $maxLength);
+    $suffix = '';
+    $candidate = $base;
+    for ($attempt = 0; $attempt < 1000; $attempt++) {
+        if (strlen($candidate) > $maxLength) {
+            $candidate = substr($candidate, 0, $maxLength);
+        }
+        $reserved = in_array(strtolower($candidate), [strtolower(DB_NAME), strtolower(MASTER_DB_NAME)], true);
+        if (!$reserved && !business_db_in_use($candidate)) {
+            return $candidate;
+        }
+
+        $suffix = $attempt === 0 ? '_' . $id : '_' . $id . '_' . ($attempt + 1);
+        $candidate = substr($base, 0, max(1, $maxLength - strlen($suffix))) . $suffix;
+    }
+
+    throw new RuntimeException('Could not find an unused database name for this business.');
 }
 
 function business_db_in_use(string $name): bool
@@ -533,9 +548,8 @@ function business_db_error(PDOException $e): Throwable
 {
     $msg = $e->getMessage();
     if (str_contains($msg, '1044') || str_contains($msg, '1045') || stripos($msg, 'denied') !== false) {
-        return new RuntimeException('Your hosting does not allow the software to create a database by itself. '
-            . 'DB Error: ' . $msg . ' | '
-            . 'Or create a new empty database in hosting panel and enter its name in "Database Name".');
+        return new RuntimeException('Your hosting blocked automatic database creation. Configure CPANEL_USER and CPANEL_TOKEN in includes/config.php, or ask the hosting provider to grant CREATE DATABASE permission to the application MySQL user. '
+            . 'Database error: ' . $msg);
     }
     return $e;
 }

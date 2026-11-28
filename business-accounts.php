@@ -13,9 +13,8 @@ if (!is_super_admin()) {
     exit('Only the main administrator can manage business accounts.');
 }
 
-$autoCreateBusinessDb = IS_LOCAL || cpanel_enabled();
 $errors = [];
-$form = ['business_name' => '', 'owner_name' => '', 'mobile' => '', 'email' => '', 'username' => '', 'db_name' => ''];
+$form = ['business_name' => '', 'owner_name' => '', 'mobile' => '', 'email' => '', 'username' => ''];
 
 function ba_redirect(string $msg): void
 {
@@ -52,12 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (strlen($password) < 8 || strlen($password) > 72) {
                 $errors[] = 'Password must be 8 to 72 characters.';
-            }
-            if ($form['db_name'] !== '' && !preg_match('/^[A-Za-z0-9_]{1,64}$/', $form['db_name'])) {
-                $errors[] = 'Database name: letters, numbers and _ only (exactly as shown in the hosting panel).';
-            }
-            if (!$autoCreateBusinessDb && $form['db_name'] === '') {
-                $errors[] = 'Create a new empty database in the hosting panel, add the application MySQL user with ALL PRIVILEGES, and enter its full database name.';
             }
             $hasLogo = !empty($_FILES['logo']['name']);
             if ($hasLogo && ($logoError = logo_check($_FILES['logo']))) {
@@ -338,6 +331,7 @@ include 'header.php';
                                 <div>
                                     <div class="ba-name"><?php echo e($a['business_name']); ?></div>
                                     <div class="ba-sub"><?php echo e($a['owner_name']); ?></div>
+                                    <div class="ba-sub">DB: <?php echo e($a['db_name']); ?></div>
                                 </div>
                             </div>
                         </td>
@@ -453,10 +447,13 @@ include 'header.php';
                         <input type="password" class="form-control" id="bPass" name="password" minlength="8" maxlength="72" required autocomplete="new-password">
                     </div>
                     <div class="col-12">
-                        <label class="form-label fw-semibold" for="bDb">Database Name <?php if ($autoCreateBusinessDb): ?><span class="ba-sub">(optional - leave empty to create automatically)</span><?php else: ?><span class="text-danger">*</span><?php endif; ?></label>
-                        <input type="text" class="form-control" id="bDb" name="db_name" maxlength="64" pattern="[A-Za-z0-9_]{1,64}" placeholder="<?php echo $autoCreateBusinessDb ? 'Leave empty to create automatically' : 'Enter the full database name'; ?>" value="<?php echo e($form['db_name']); ?>" <?php echo $autoCreateBusinessDb ? '' : 'required'; ?>>
-                        <?php if (!$autoCreateBusinessDb): ?>
-                            <div class="ba-sub mt-1">In cPanel, create a new empty database, add MySQL user <b><?php echo e(DB_USER); ?></b> to it with ALL PRIVILEGES, then enter the full database name here.</div>
+                        <label class="form-label fw-semibold">Database</label>
+                        <div class="form-control bg-light text-muted">
+                            Created automatically from the business name. Spaces and special characters become underscores. The configured cPanel account prefix is included when set.
+                        </div>
+                        <div class="ba-sub mt-1">A separate empty database is created for each business. Hosting must allow database creation through MySQL or the configured cPanel API.</div>
+                        <?php if (!IS_LOCAL && !cpanel_enabled()): ?>
+                            <div class="ba-sub text-warning mt-1">The cPanel API is not configured in includes/config.php. If MySQL blocks database creation, set CPANEL_USER and CPANEL_TOKEN or ask the host to grant CREATE DATABASE permission.</div>
                         <?php endif; ?>
                     </div>
                     <div class="col-12">
