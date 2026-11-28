@@ -188,8 +188,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             // Database already missing - nothing to back up.
                         }
                         try {
-                            master()->exec('DROP DATABASE IF EXISTS `' . $account['db_name'] . '`');
-                        } catch (PDOException $e) {
+                            business_db_drop($account['db_name']);
+                        } catch (Throwable $e) {
                             // Hosting does not allow dropping databases: empty it instead
                             // (the empty database can then be removed from the hosting panel).
                             try {
@@ -449,7 +449,7 @@ include 'header.php';
                         <input type="text" class="form-control" id="bPass" name="password" minlength="8" maxlength="72" required>
                     </div>
                     <div class="col-12">
-                        <label class="form-label fw-semibold" for="bDb">Database Name <span class="ba-sub">(only if your hosting does not allow automatic databases)</span></label>
+                        <label class="form-label fw-semibold" for="bDb">Database Name <span class="ba-sub">(optional - leave empty, a new database is created automatically)</span></label>
                         <input type="text" class="form-control" id="bDb" name="db_name" maxlength="64" pattern="[A-Za-z0-9_]{1,64}" placeholder="Leave empty to create automatically" value="<?php echo e($form['db_name']); ?>">
                         <div class="ba-sub mt-1">On cPanel / shared hosting: MySQL Databases &rarr; create a new database &rarr; add user <b><?php echo e(DB_USER); ?></b> with ALL PRIVILEGES &rarr; type the full database name here.</div>
                     </div>

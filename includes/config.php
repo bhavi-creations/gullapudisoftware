@@ -47,6 +47,14 @@ define('MASTER_DB_NAME', IS_LOCAL ? 'gullapudi_master' : DB_NAME);
 define('TENANT_DB_PREFIX', IS_LOCAL ? 'gullapudi_biz_' : 'gullapudisoftware_biz_');
 define('MAIN_BUSINESS_NAME', 'Gullapudi Glass & Plywood Centre');
 
+/* LIVE (cPanel shared hosting): the MySQL user is usually not allowed to create
+   databases. Fill these in and every new business gets its own database automatically
+   through cPanel. cPanel > Security > Manage API Tokens > Create (copy the token).
+   CPANEL_USER = your cPanel login name. Leave empty on XAMPP / VPS. */
+define('CPANEL_HOST', '');   // e.g. 'yourdomain.com' (empty = this server)
+define('CPANEL_USER', '');
+define('CPANEL_TOKEN', '');
+
 /* Company details of the MAIN business (database DB_NAME). They are copied into its
    Business Settings the first time; after that, edit them from Business Settings.
    Other businesses fill in their own details from Business Settings. */
